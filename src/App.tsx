@@ -20,6 +20,7 @@ import InfoPanel from './ui/InfoPanel.tsx';
 import ParamsPanel from './ui/ParamsPanel.tsx';
 import ResultsPanel from './ui/ResultsPanel.tsx';
 import RoiList from './ui/RoiList.tsx';
+import SamplesPanel from './ui/SamplesPanel.tsx';
 import UploadPanel from './ui/UploadPanel.tsx';
 
 const STORAGE_KEY = 'pathology-workbench:project:v1';
@@ -224,6 +225,32 @@ export default function App() {
     setProject((prev) => ({ ...prev, rois: prev.rois.filter((roi) => roi.id !== id) }));
   }, []);
 
+  const addSample = useCallback((group: string) => {
+    if (!analysis || !project.image) return;
+    setProject((prev) => ({
+      ...prev,
+      samples: [
+        ...prev.samples,
+        {
+          id: crypto.randomUUID(),
+          name: `S${prev.samples.length + 1} ${project.image!.name}`,
+          group,
+          imageName: project.image!.name,
+          addedAt: Date.now(),
+          metrics: analysis.overall,
+        },
+      ],
+    }));
+    setStatus({ kind: 'ok', message: `已加入样本库（分组：${group}）` });
+  }, [analysis, project.image]);
+
+  const updateSample = useCallback((id: string, patch: { group?: string; name?: string }) => {
+    setProject((prev) => ({
+      ...prev,
+      samples: prev.samples.map((sample) => (sample.id === id ? { ...sample, ...patch } : sample)),
+    }));
+  }, []);
+
   const hasImage = Boolean(project.pixels);
   return (
     <div className="app">
@@ -281,6 +308,18 @@ export default function App() {
             calibrating={calibrating}
             showOverlay={showOverlay}
             onShowOverlayChange={setShowOverlay}
+          />
+          <SamplesPanel
+            project={project}
+            canAddSample={Boolean(analysis)}
+            disabled={analyzing}
+            onAddSample={addSample}
+            onUpdateSample={updateSample}
+            onDeleteSample={(id) =>
+              setProject((prev) => ({ ...prev, samples: prev.samples.filter((s) => s.id !== id) }))
+            }
+            onStatus={(message, kind) => setStatus({ kind, message })}
+            analysisResult={analysis}
           />
           <ResultsPanel result={analysis} running={analyzing} hasImage={hasImage} />
         </aside>

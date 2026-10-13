@@ -299,6 +299,33 @@ body {
 .roi-dot-4 { background: #15803d; }
 .roi-dot-5 { background: #4338ca; }
 
+.sample-name {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 12px;
+  width: 90px;
+}
+
+.stats-block { margin-top: 10px; }
+
+.export-buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+
+.export-buttons button {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.export-buttons button:hover { border-color: var(--accent); color: var(--accent); }
+
+.chart-preview { margin-top: 10px; overflow-x: auto; }
+.chart-preview svg { max-width: 100%; height: auto; }
+
 .dropzone {
   border: 1.5px dashed var(--border);
   border-radius: var(--radius);

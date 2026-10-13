@@ -106,6 +106,24 @@ export interface ValueGroup {
   values: number[];
 }
 
+/** 可做组间比较的指标 */
+export type MetricKey =
+  | 'positiveFraction'
+  | 'labelingIndex'
+  | 'integratedOpticalDensity'
+  | 'meanOpticalDensity'
+  | 'densityPerMm2';
+
+/** 样本库条目：一张图分析完成后的整图指标（像素不入库，避免膨胀） */
+export interface SampleRecord {
+  id: string;
+  name: string;
+  group: string;
+  imageName: string;
+  addedAt: number;
+  metrics: RoiMetrics;
+}
+
 export interface ProjectState {
   version: 1;
   image: LoadedImage | null;
@@ -116,6 +134,7 @@ export interface ProjectState {
   segmentation: SegmentationConfig;
   calibration: Calibration;
   rois: Roi[];
+  samples: SampleRecord[];
 }
 
 /** Worker 一次分析的产出 */
@@ -168,5 +187,6 @@ export function createEmptyProject(): ProjectState {
     segmentation: { ...DEFAULT_SEGMENTATION },
     calibration: { mpp: null },
     rois: [],
+    samples: [],
   };
 }
