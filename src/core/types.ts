@@ -114,6 +114,20 @@ export interface ProjectState {
   rois: Roi[];
 }
 
+/** Worker 一次分析的产出 */
+export interface AnalysisResult {
+  requestId: number;
+  overall: RoiMetrics;
+  perRoi: RoiMetrics[];
+  /** 实际生效的阈值（control 模式可能回落为自动值，见 warnings） */
+  thresholdUsed: number;
+  /** 背景水平（扣除前的 OD 百分位） */
+  backgroundLevel: number;
+  /** 紫色叠加层，仅阳性像素有 alpha */
+  overlay: ImageData | null;
+  warnings: string[];
+}
+
 export const STAIN_PROFILES: StainProfile[] = [
   {
     id: 'h_dab',

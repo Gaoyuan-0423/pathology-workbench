@@ -6,6 +6,7 @@ interface View { scale: number; tx: number; ty: number }
 interface CanvasViewProps {
   pixels: ImageData | null;
   rois?: Roi[];
+  overlay?: ImageData | null;
   /** 是否处于 ROI 绘制模式（M3 起使用）；绘制中显示十字光标 */
   drawRoi?: boolean;
   onRoiDrawn?: (roi: { x: number; y: number; w: number; h: number }) => void;
@@ -21,10 +22,11 @@ function makeOffscreen(pixels: ImageData): HTMLCanvasElement {
 
 const ROI_COLORS = ['#7c3aed', '#0891b2', '#b45309', '#be185d', '#15803d', '#4338ca'];
 
-export default function CanvasView({ pixels, rois, drawRoi, onRoiDrawn }: CanvasViewProps) {
+export default function CanvasView({ pixels, rois, overlay, drawRoi, onRoiDrawn }: CanvasViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const offscreen = useMemo(() => (pixels ? makeOffscreen(pixels) : null), [pixels]);
+  const overlayCanvas = useMemo(() => (overlay ? makeOffscreen(overlay) : null), [overlay]);
   const [view, setView] = useState<View>({ scale: 1, tx: 0, ty: 0 });
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [hoverRoi, setHoverRoi] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
@@ -82,6 +84,11 @@ export default function CanvasView({ pixels, rois, drawRoi, onRoiDrawn }: Canvas
     ctx.translate(view.tx, view.ty);
     ctx.scale(view.scale, view.scale);
     ctx.drawImage(offscreen, 0, 0);
+    if (overlayCanvas) {
+      ctx.globalAlpha = 0.75;
+      ctx.drawImage(overlayCanvas, 0, 0);
+      ctx.globalAlpha = 1;
+    }
     ctx.restore();
 
     // ROI 框（工作图坐标 → 屏幕坐标）
@@ -109,7 +116,7 @@ export default function CanvasView({ pixels, rois, drawRoi, onRoiDrawn }: Canvas
       );
       ctx.setLineDash([]);
     }
-  }, [pixels, offscreen, view, size, rois, hoverRoi]);
+  }, [pixels, offscreen, overlayCanvas, view, size, rois, hoverRoi]);
 
   const toImage = useCallback(
     (clientX: number, clientY: number) => {

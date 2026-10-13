@@ -1,14 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { get, set } from 'idb-keyval';
+import { runAnalysis } from './core/analysis-client.ts';
 import { decodeImageFile } from './core/image/decode.ts';
 import {
   createEmptyProject,
   DEFAULT_SEGMENTATION,
   DEFAULT_THRESHOLD,
+  type AnalysisResult,
   type ProjectState,
+  type ThresholdConfig,
 } from './core/types.ts';
 import CanvasView from './ui/CanvasView.tsx';
 import InfoPanel from './ui/InfoPanel.tsx';
+import ParamsPanel from './ui/ParamsPanel.tsx';
+import ResultsPanel from './ui/ResultsPanel.tsx';
 import UploadPanel from './ui/UploadPanel.tsx';
 
 const STORAGE_KEY = 'pathology-workbench:project:v1';
@@ -19,6 +24,9 @@ export default function App() {
   const [project, setProject] = useState<ProjectState>(createEmptyProject);
   const [loaded, setLoaded] = useState(false);
   const [status, setStatus] = useState<Status>({ kind: 'idle', message: '' });
+  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [showOverlay, setShowOverlay] = useState(true);
   const saveTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => {
@@ -47,6 +55,24 @@ export default function App() {
     }, 600);
     return () => window.clearTimeout(saveTimer.current);
   }, [project, loaded]);
+
+  // 参数或图像变化 → 防抖后自动分析（stale 结果按 requestId 丢弃）
+  const { pixels, rois, threshold, segmentation } = project;
+  useEffect(() => {
+    if (!pixels) {
+      setAnalysis(null);
+      setAnalyzing(false);
+      return;
+    }
+    setAnalyzing(true);
+    const timer = window.setTimeout(() => {
+      void runAnalysis(pixels, rois, threshold, segmentation).then((result) => {
+        setAnalysis(result);
+        setAnalyzing(false);
+      });
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [pixels, rois, threshold, segmentation]);
 
   const handleFile = useCallback(async (file: File) => {
     setStatus({ kind: 'busy', message: `正在解码 ${file.name}…` });
@@ -84,6 +110,10 @@ export default function App() {
     setStatus({ kind: 'idle', message: '' });
   }, []);
 
+  const patchThreshold = useCallback((patch: Partial<ThresholdConfig>) => {
+    setProject((prev) => ({ ...prev, threshold: { ...prev.threshold, ...patch } }));
+  }, []);
+
   return (
     <div className="app">
       <header className="app-header">
@@ -96,7 +126,11 @@ export default function App() {
         )}
       </header>
       <main className="app-main">
-        <CanvasView pixels={project.pixels} rois={project.rois} />
+        <CanvasView
+          pixels={project.pixels}
+          rois={project.rois}
+          overlay={showOverlay ? analysis?.overlay ?? null : null}
+        />
         <aside className="side-panel">
           <UploadPanel busy={status.kind === 'busy'} onFile={(file) => void handleFile(file)} />
           <InfoPanel
@@ -105,12 +139,14 @@ export default function App() {
             onMppChange={(mpp) => setProject((prev) => ({ ...prev, calibration: { mpp } }))}
             onClear={clearImage}
           />
-          {project.image && (
-            <section className="panel">
-              <h3>定量引擎</h3>
-              <p className="panel-note">H-DAB 去卷积与阈值分析将在导入后于下一步开放（M2）。</p>
-            </section>
-          )}
+          <ParamsPanel
+            threshold={project.threshold}
+            disabled={!project.pixels || analyzing}
+            onChange={patchThreshold}
+            showOverlay={showOverlay}
+            onShowOverlayChange={setShowOverlay}
+          />
+          <ResultsPanel result={analysis} running={analyzing} hasImage={Boolean(project.pixels)} />
         </aside>
       </main>
     </div>
