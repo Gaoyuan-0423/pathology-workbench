@@ -7,9 +7,12 @@ interface CanvasViewProps {
   pixels: ImageData | null;
   rois?: Roi[];
   overlay?: ImageData | null;
-  /** 是否处于 ROI 绘制模式（M3 起使用）；绘制中显示十字光标 */
+  /** ROI 框选模式 */
   drawRoi?: boolean;
+  /** 比例尺标定线段模式 */
+  drawLine?: boolean;
   onRoiDrawn?: (roi: { x: number; y: number; w: number; h: number }) => void;
+  onLineDrawn?: (lengthPx: number) => void;
 }
 
 function makeOffscreen(pixels: ImageData): HTMLCanvasElement {
@@ -22,7 +25,15 @@ function makeOffscreen(pixels: ImageData): HTMLCanvasElement {
 
 const ROI_COLORS = ['#7c3aed', '#0891b2', '#b45309', '#be185d', '#15803d', '#4338ca'];
 
-export default function CanvasView({ pixels, rois, overlay, drawRoi, onRoiDrawn }: CanvasViewProps) {
+export default function CanvasView({
+  pixels,
+  rois,
+  overlay,
+  drawRoi,
+  drawLine,
+  onRoiDrawn,
+  onLineDrawn,
+}: CanvasViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const offscreen = useMemo(() => (pixels ? makeOffscreen(pixels) : null), [pixels]);
@@ -30,7 +41,12 @@ export default function CanvasView({ pixels, rois, overlay, drawRoi, onRoiDrawn 
   const [view, setView] = useState<View>({ scale: 1, tx: 0, ty: 0 });
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [hoverRoi, setHoverRoi] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
-  const dragRef = useRef<{ kind: 'pan' | 'draw'; startX: number; startY: number; origin: View } | null>(null);
+  const [hoverLine, setHoverLine] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
+  const dragRef = useRef<
+    | { kind: 'pan'; startX: number; startY: number; origin: View }
+    | { kind: 'draw'; startX: number; startY: number; origin: View }
+  | { kind: 'line'; startX: number; startY: number; origin: View }
+  | null>(null);
   const fittedRef = useRef(false);
 
   const fit = useCallback(() => {
@@ -116,7 +132,18 @@ export default function CanvasView({ pixels, rois, overlay, drawRoi, onRoiDrawn 
       );
       ctx.setLineDash([]);
     }
-  }, [pixels, offscreen, overlayCanvas, view, size, rois, hoverRoi]);
+    if (hoverLine) {
+      ctx.strokeStyle = '#0891b2';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(hoverLine.x1 * view.scale + view.tx, hoverLine.y1 * view.scale + view.ty);
+      ctx.lineTo(hoverLine.x2 * view.scale + view.tx, hoverLine.y2 * view.scale + view.ty);
+      ctx.stroke();
+      const lengthPx = Math.hypot(hoverLine.x2 - hoverLine.x1, hoverLine.y2 - hoverLine.y1);
+      ctx.fillStyle = '#0891b2';
+      ctx.fillText(`${lengthPx.toFixed(1)} px`, hoverLine.x2 * view.scale + view.tx + 6, hoverLine.y2 * view.scale + view.ty - 6);
+    }
+  }, [pixels, offscreen, overlayCanvas, view, size, rois, hoverRoi, hoverLine]);
 
   const toImage = useCallback(
     (clientX: number, clientY: number) => {
@@ -146,11 +173,10 @@ export default function CanvasView({ pixels, rois, overlay, drawRoi, onRoiDrawn 
     (event: React.PointerEvent) => {
       event.currentTarget.setPointerCapture(event.pointerId);
       const start = toImage(event.clientX, event.clientY);
-      dragRef.current = drawRoi
-        ? { kind: 'draw', startX: start.x, startY: start.y, origin: view }
-        : { kind: 'pan', startX: event.clientX, startY: event.clientY, origin: view };
+      const kind = drawRoi ? 'draw' : drawLine ? 'line' : 'pan';
+      dragRef.current = { kind, startX: start.x, startY: start.y, origin: view };
     },
-    [drawRoi, toImage, view],
+    [drawRoi, drawLine, toImage, view],
   );
 
   const onPointerMove = useCallback(
@@ -165,12 +191,16 @@ export default function CanvasView({ pixels, rois, overlay, drawRoi, onRoiDrawn 
         });
       } else {
         const cur = toImage(event.clientX, event.clientY);
-        setHoverRoi({
-          x: Math.min(drag.startX, cur.x),
-          y: Math.min(drag.startY, cur.y),
-          w: Math.abs(cur.x - drag.startX),
-          h: Math.abs(cur.y - drag.startY),
-        });
+        if (drag.kind === 'draw') {
+          setHoverRoi({
+            x: Math.min(drag.startX, cur.x),
+            y: Math.min(drag.startY, cur.y),
+            w: Math.abs(cur.x - drag.startX),
+            h: Math.abs(cur.y - drag.startY),
+          });
+        } else {
+          setHoverLine({ x1: drag.startX, y1: drag.startY, x2: cur.x, y2: cur.y });
+        }
       }
     },
     [toImage],
@@ -182,8 +212,13 @@ export default function CanvasView({ pixels, rois, overlay, drawRoi, onRoiDrawn 
     if (drag?.kind === 'draw' && hoverRoi && hoverRoi.w > 3 && hoverRoi.h > 3) {
       onRoiDrawn?.(hoverRoi);
     }
+    if (drag?.kind === 'line' && hoverLine) {
+      const lengthPx = Math.hypot(hoverLine.x2 - hoverLine.x1, hoverLine.y2 - hoverLine.y1);
+      if (lengthPx > 3) onLineDrawn?.(lengthPx);
+    }
     setHoverRoi(null);
-  }, [hoverRoi, onRoiDrawn]);
+    setHoverLine(null);
+  }, [hoverRoi, hoverLine, onRoiDrawn, onLineDrawn]);
 
   return (
     <div className="canvas-wrap" ref={containerRef}>
@@ -200,7 +235,11 @@ export default function CanvasView({ pixels, rois, overlay, drawRoi, onRoiDrawn 
       </div>
       <canvas
         ref={canvasRef}
-        style={{ width: size.w || undefined, height: size.h || undefined, cursor: drawRoi ? 'crosshair' : 'grab' }}
+        style={{
+          width: size.w || undefined,
+          height: size.h || undefined,
+          cursor: drawRoi || drawLine ? 'crosshair' : 'grab',
+        }}
         className="canvas-main"
         onWheel={onWheel}
         onPointerDown={onPointerDown}

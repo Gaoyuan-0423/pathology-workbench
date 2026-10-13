@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { get, set } from 'idb-keyval';
 import { runAnalysis } from './core/analysis-client.ts';
+import { controlThresholdFromChannel } from './core/analysis/calibrate.ts';
+import { histogram256, percentileFromHist } from './core/analysis/threshold.ts';
+import { extractDabChannel } from './core/image/color.ts';
 import { decodeImageFile } from './core/image/decode.ts';
 import {
   createEmptyProject,
@@ -8,17 +11,64 @@ import {
   DEFAULT_THRESHOLD,
   type AnalysisResult,
   type ProjectState,
+  type Roi,
+  type SegmentationConfig,
   type ThresholdConfig,
 } from './core/types.ts';
 import CanvasView from './ui/CanvasView.tsx';
 import InfoPanel from './ui/InfoPanel.tsx';
 import ParamsPanel from './ui/ParamsPanel.tsx';
 import ResultsPanel from './ui/ResultsPanel.tsx';
+import RoiList from './ui/RoiList.tsx';
 import UploadPanel from './ui/UploadPanel.tsx';
 
 const STORAGE_KEY = 'pathology-workbench:project:v1';
 
 type Status = { kind: 'idle' | 'busy' | 'error' | 'ok'; message: string };
+type DrawMode = 'none' | 'roi' | 'line';
+
+function LineCalibration({
+  lengthPx,
+  onApply,
+  onCancel,
+}: {
+  lengthPx: number;
+  onApply: (mpp: number) => void;
+  onCancel: () => void;
+}) {
+  const [micrometers, setMicrometers] = useState('');
+  const value = Number(micrometers);
+  const valid = Number.isFinite(value) && value > 0;
+  return (
+    <section className="panel">
+      <h3>比例尺标定</h3>
+      <p className="panel-note">
+        线段长度 {lengthPx.toFixed(1)} px。输入该线段对应的真实长度：
+      </p>
+      <div className="field-row">
+        <input
+          type="number"
+          min={0.01}
+          step={1}
+          placeholder="μm"
+          value={micrometers}
+          onChange={(event) => setMicrometers(event.target.value)}
+        />
+        <button
+          type="button"
+          disabled={!valid}
+          onClick={() => {
+            onApply(value / lengthPx);
+            onCancel();
+          }}
+        >
+          应用
+        </button>
+        <button type="button" onClick={onCancel}>取消</button>
+      </div>
+    </section>
+  );
+}
 
 export default function App() {
   const [project, setProject] = useState<ProjectState>(createEmptyProject);
@@ -27,6 +77,9 @@ export default function App() {
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [showOverlay, setShowOverlay] = useState(true);
+  const [drawMode, setDrawMode] = useState<DrawMode>('none');
+  const [calibrating, setCalibrating] = useState(false);
+  const [pendingLinePx, setPendingLinePx] = useState<number | null>(null);
   const saveTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => {
@@ -56,8 +109,7 @@ export default function App() {
     return () => window.clearTimeout(saveTimer.current);
   }, [project, loaded]);
 
-  // 参数或图像变化 → 防抖后自动分析（stale 结果按 requestId 丢弃）
-  const { pixels, rois, threshold, segmentation } = project;
+  const { pixels, rois, threshold, segmentation, calibration } = project;
   useEffect(() => {
     if (!pixels) {
       setAnalysis(null);
@@ -66,13 +118,13 @@ export default function App() {
     }
     setAnalyzing(true);
     const timer = window.setTimeout(() => {
-      void runAnalysis(pixels, rois, threshold, segmentation).then((result) => {
+      void runAnalysis(pixels, rois, threshold, segmentation, calibration).then((result) => {
         setAnalysis(result);
         setAnalyzing(false);
       });
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [pixels, rois, threshold, segmentation]);
+  }, [pixels, rois, threshold, segmentation, calibration]);
 
   const handleFile = useCallback(async (file: File) => {
     setStatus({ kind: 'busy', message: `正在解码 ${file.name}…` });
@@ -105,8 +157,47 @@ export default function App() {
     }
   }, []);
 
+  const handleCalibrateControl = useCallback(
+    async (file: File) => {
+      setCalibrating(true);
+      try {
+        const decoded = await decodeImageFile(file);
+        const dab = extractDabChannel(decoded.pixels);
+        const bg = percentileFromHist(histogram256(dab), project.threshold.backgroundPercentile);
+        for (let i = 0; i < dab.length; i += 1) {
+          const v = dab[i] - bg;
+          dab[i] = v > 0 ? v : 0;
+        }
+        const controlThreshold = controlThresholdFromChannel(
+          dab,
+          project.threshold.controlFalsePositiveRate,
+        );
+        setProject((prev) => ({
+          ...prev,
+          threshold: {
+            ...prev.threshold,
+            controlThreshold,
+            controlImageName: file.name,
+            mode: 'control',
+          },
+        }));
+        setStatus({ kind: 'ok', message: `对照片标定完成：阈值 ${controlThreshold}` });
+      } catch (error) {
+        setStatus({
+          kind: 'error',
+          message: error instanceof Error ? error.message : String(error),
+        });
+      } finally {
+        setCalibrating(false);
+      }
+    },
+    [project.threshold.backgroundPercentile, project.threshold.controlFalsePositiveRate],
+  );
+
   const clearImage = useCallback(() => {
     setProject(createEmptyProject());
+    setDrawMode('none');
+    setPendingLinePx(null);
     setStatus({ kind: 'idle', message: '' });
   }, []);
 
@@ -114,6 +205,26 @@ export default function App() {
     setProject((prev) => ({ ...prev, threshold: { ...prev.threshold, ...patch } }));
   }, []);
 
+  const patchSegmentation = useCallback((patch: Partial<SegmentationConfig>) => {
+    setProject((prev) => ({ ...prev, segmentation: { ...prev.segmentation, ...patch } }));
+  }, []);
+
+  const handleRoiDrawn = useCallback((rect: { x: number; y: number; w: number; h: number }) => {
+    setProject((prev) => {
+      const roi: Roi = {
+        id: crypto.randomUUID(),
+        name: `ROI ${prev.rois.length + 1}`,
+        ...rect,
+      };
+      return { ...prev, rois: [...prev.rois, roi] };
+    });
+  }, []);
+
+  const deleteRoi = useCallback((id: string) => {
+    setProject((prev) => ({ ...prev, rois: prev.rois.filter((roi) => roi.id !== id) }));
+  }, []);
+
+  const hasImage = Boolean(project.pixels);
   return (
     <div className="app">
       <header className="app-header">
@@ -126,11 +237,17 @@ export default function App() {
         )}
       </header>
       <main className="app-main">
-        <CanvasView
-          pixels={project.pixels}
-          rois={project.rois}
-          overlay={showOverlay ? analysis?.overlay ?? null : null}
-        />
+        <div className="canvas-column">
+          <CanvasView
+            pixels={project.pixels}
+            rois={project.rois}
+            overlay={showOverlay ? analysis?.overlay ?? null : null}
+            drawRoi={drawMode === 'roi'}
+            drawLine={drawMode === 'line'}
+            onRoiDrawn={handleRoiDrawn}
+            onLineDrawn={setPendingLinePx}
+          />
+        </div>
         <aside className="side-panel">
           <UploadPanel busy={status.kind === 'busy'} onFile={(file) => void handleFile(file)} />
           <InfoPanel
@@ -139,14 +256,33 @@ export default function App() {
             onMppChange={(mpp) => setProject((prev) => ({ ...prev, calibration: { mpp } }))}
             onClear={clearImage}
           />
+          <RoiList
+            rois={project.rois}
+            drawRoi={drawMode === 'roi'}
+            drawLine={drawMode === 'line'}
+            onDrawRoiToggle={(value) => setDrawMode(value ? 'roi' : 'none')}
+            onDrawLineToggle={(value) => setDrawMode(value ? 'line' : 'none')}
+            onDelete={deleteRoi}
+          />
+          {pendingLinePx !== null && (
+            <LineCalibration
+              lengthPx={pendingLinePx}
+              onApply={(mpp) => setProject((prev) => ({ ...prev, calibration: { mpp } }))}
+              onCancel={() => setPendingLinePx(null)}
+            />
+          )}
           <ParamsPanel
             threshold={project.threshold}
-            disabled={!project.pixels || analyzing}
-            onChange={patchThreshold}
+            segmentation={project.segmentation}
+            disabled={!hasImage || analyzing}
+            onThresholdChange={patchThreshold}
+            onSegmentationChange={patchSegmentation}
+            onCalibrateControl={(file) => void handleCalibrateControl(file)}
+            calibrating={calibrating}
             showOverlay={showOverlay}
             onShowOverlayChange={setShowOverlay}
           />
-          <ResultsPanel result={analysis} running={analyzing} hasImage={Boolean(project.pixels)} />
+          <ResultsPanel result={analysis} running={analyzing} hasImage={hasImage} />
         </aside>
       </main>
     </div>

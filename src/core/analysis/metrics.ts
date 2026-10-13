@@ -78,6 +78,7 @@ export function computeAreaMetrics(
     positiveNuclei: 0,
     totalNuclei: 0,
     labelingIndex: null,
+    borderNuclei: 0,
     integratedOpticalDensity: Math.round(iod * 10) / 10,
     meanOpticalDensity: positiveCount > 0 ? Math.round((iod / positiveCount) * 100) / 100 : null,
     estimatedTotalCount: null,

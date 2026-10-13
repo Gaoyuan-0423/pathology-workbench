@@ -20,6 +20,8 @@ export interface ThresholdConfig {
   controlFalsePositiveRate: number;
   /** mode = 'control'：由对照片计算得到的阈值（0–255），null 表示尚未标定 */
   controlThreshold: number | null;
+  /** 标定所用的对照片文件名（展示与 Methods 用） */
+  controlImageName: string | null;
 }
 
 export interface SegmentationConfig {
@@ -90,6 +92,8 @@ export interface RoiMetrics {
   integratedOpticalDensity: number;
   /** 平均光密度（阳性像素上的均值，0–255 标尺） */
   meanOpticalDensity: number | null;
+  /** 阳性细胞核中触边数量 */
+  borderNuclei: number;
   /** 触边目标折算计数修正说明（仅展示用，见 segment.ts） */
   estimatedTotalCount: number | null;
   /** 细胞密度（个/mm²），需 mpp 标定，否则 null */
@@ -119,8 +123,10 @@ export interface AnalysisResult {
   requestId: number;
   overall: RoiMetrics;
   perRoi: RoiMetrics[];
-  /** 实际生效的阈值（control 模式可能回落为自动值，见 warnings） */
+  /** 实际生效的 DAB 阈值（control 模式可能回落为自动值，见 warnings） */
   thresholdUsed: number;
+  /** 核分割实际生效的苏木精阈值（逐图 Otsu） */
+  nuclearThresholdUsed: number;
   /** 背景水平（扣除前的 OD 百分位） */
   backgroundLevel: number;
   /** 紫色叠加层，仅阳性像素有 alpha */
@@ -143,6 +149,7 @@ export const DEFAULT_THRESHOLD: ThresholdConfig = {
   backgroundPercentile: 5,
   controlFalsePositiveRate: 0.001,
   controlThreshold: null,
+  controlImageName: null,
 };
 
 export const DEFAULT_SEGMENTATION: SegmentationConfig = {
