@@ -128,8 +128,10 @@ export default function SamplesPanel({
         </div>
       )}
 
-      {report && (
+      {(report || analysisResult) && (
         <div className="stats-block">
+          {report && (
+            <>
           <table className="result-table">
             <thead>
               <tr>
@@ -168,7 +170,14 @@ export default function SamplesPanel({
               ))}
             </tbody>
           </table>
-          <p className="panel-note">{report.recommendation}</p>
+              <p className="panel-note">{report.recommendation}</p>
+            </>
+          )}
+          {analysisResult && !report && (
+            <p className="panel-note">
+              当前整图结果可导出（阈值 {analysisResult.thresholdUsed} · 核阈值 {analysisResult.nuclearThresholdUsed}）；加入 ≥2 组样本后可做组间统计。
+            </p>
+          )}
           {chartSvg && (
             <div
               className="chart-preview"
