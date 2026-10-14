@@ -11,7 +11,27 @@ function pct(value: number | null): string {
 }
 
 export default function ResultsPanel({ result, running, hasImage }: ResultsPanelProps) {
-  if (!hasImage) return null;
+  if (!hasImage || !result) return null;
+  if (result.coloc) {
+    return (
+      <section className="panel">
+        <h3>共定位结果 {running && <span className="running-badge">分析中…</span>}</h3>
+        <table className="result-table">
+          <tbody>
+            <tr><td>掩膜 Pearson r（主指标）</td><td>{result.coloc.pearsonMasked.toFixed(3)}</td></tr>
+            <tr><td>全像素 Pearson r（参考）</td><td>{Number.isFinite(result.coloc.pearsonAll) ? result.coloc.pearsonAll.toFixed(3) : '—'}</td></tr>
+            <tr><td>Manders M1（A 在 B 阳性区）</td><td>{result.coloc.mandersM1.toFixed(3)}</td></tr>
+            <tr><td>Manders M2（B 在 A 阳性区）</td><td>{result.coloc.mandersM2.toFixed(3)}</td></tr>
+            <tr><td>通道阈值 A / B</td><td>{result.coloc.thresholdA} / {result.coloc.thresholdB}</td></tr>
+            <tr><td>背景水平 A / B</td><td>{result.coloc.backgroundA} / {result.coloc.backgroundB}</td></tr>
+          </tbody>
+        </table>
+        <p className="panel-note">
+          Pearson 范围 −1…1；Manders 0…1。掩膜 = 任一通道超阈像素。
+        </p>
+      </section>
+    );
+  }
   return (
     <section className="panel">
       <h3>定量结果 {running && <span className="running-badge">分析中…</span>}</h3>

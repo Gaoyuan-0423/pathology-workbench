@@ -43,6 +43,7 @@ const result: AnalysisResult = {
   nuclearThresholdUsed: 55,
   backgroundLevel: 3,
   overlay: null,
+  coloc: null,
   warnings: [],
 };
 

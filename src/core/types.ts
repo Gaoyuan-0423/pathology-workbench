@@ -38,6 +38,43 @@ export interface Calibration {
   mpp: number | null;
 }
 
+
+/** 共定位分析结果（转引自 colocalize.ts 的结构） */
+export interface ColocResult {
+  channelA: number;
+  channelB: number;
+  pearsonAll: number;
+  pearsonMasked: number;
+  mandersM1: number;
+  mandersM2: number;
+  thresholdA: number;
+  thresholdB: number;
+  backgroundA: number;
+  backgroundB: number;
+}
+
+/** IF 共定位配置（profileId = 'if_coloc' 时生效） */
+export interface ColocConfig {
+  /** 通道 0=R 1=G 2=B */
+  channelA: 0 | 1 | 2;
+  channelB: 0 | 1 | 2;
+  /** 逐通道阈值：auto = 各自 Otsu；manual = 用 manualA/B */
+  thresholdMode: 'auto' | 'manual';
+  manualA: number;
+  manualB: number;
+  /** 逐通道背景百分位（0–25，默认 5） */
+  backgroundPercentile: number;
+}
+
+export const DEFAULT_COLOC: ColocConfig = {
+  channelA: 0,
+  channelB: 1,
+  thresholdMode: 'auto',
+  manualA: 40,
+  manualB: 40,
+  backgroundPercentile: 5,
+};
+
 export interface Roi {
   id: string;
   name: string;
@@ -48,13 +85,21 @@ export interface Roi {
   h: number;
 }
 
-/** v1 只有 H-DAB；字段为 v1.5 多染色/IF 扩展预留 */
-export type StainProfileId = 'h_dab';
+/** v1.5 染色预设；向量均取公开文献惯例值，第三残差向量由引擎正交补全 */
+export type StainProfileId = 'h_dab' | 'h_eosin' | 'masson' | 'if_coloc';
 
 export interface StainProfile {
   id: StainProfileId;
   label: string;
   description: string;
+  /** 去卷积双色向量（RGB，引擎内归一化）；IF 共定位不使用 */
+  stains: [Vec3, Vec3] | null;
+  /** 定量通道索引（0 = 第一染色，1 = 第二染色） */
+  quantifyChannel: 0 | 1;
+  /** 定量通道展示名（用于指标标签与 Methods） */
+  quantifyLabel: string;
+  /** 向量出处（界面与 Methods 明示） */
+  source: string;
 }
 
 /** 解码后的工作图元数据（图像本体为 ImageData，随 ProjectState 持久化） */
@@ -133,6 +178,7 @@ export interface ProjectState {
   threshold: ThresholdConfig;
   segmentation: SegmentationConfig;
   calibration: Calibration;
+  coloc: ColocConfig;
   rois: Roi[];
   samples: SampleRecord[];
 }
@@ -142,24 +188,64 @@ export interface AnalysisResult {
   requestId: number;
   overall: RoiMetrics;
   perRoi: RoiMetrics[];
-  /** 实际生效的 DAB 阈值（control 模式可能回落为自动值，见 warnings） */
+  /** 实际生效的定量通道阈值（control 模式可能回落为自动值，见 warnings）；IF 模式为通道 A 阈值 */
   thresholdUsed: number;
-  /** 核分割实际生效的苏木精阈值（逐图 Otsu） */
+  /** 核分割实际生效的苏木精阈值（逐图 Otsu）；IF 模式为通道 B 阈值 */
   nuclearThresholdUsed: number;
-  /** 背景水平（扣除前的 OD 百分位） */
+  /** 背景水平（扣除前的 OD 百分位）；IF 模式为通道 A 背景 */
   backgroundLevel: number;
-  /** 紫色叠加层，仅阳性像素有 alpha */
+  /** 叠加层：染色预设为阳性填充，IF 为双通道掩膜 */
   overlay: ImageData | null;
+  /** 仅 if_coloc 模式非空 */
+  coloc: ColocResult | null;
   warnings: string[];
 }
+
+/** 根类型（color.ts 内部引用类型），避免 core 循环依赖 */
+export type Vec3 = [number, number, number];
 
 export const STAIN_PROFILES: StainProfile[] = [
   {
     id: 'h_dab',
-    label: 'H-DAB（苏木精–DAB 免疫组化）',
-    description: 'Ruifrok 颜色去卷积分离苏木精与 DAB，在 DAB 光密度通道上定量',
+    label: 'H-DAB 免疫组化',
+    description: '分离苏木精与 DAB，在 DAB 光密度通道上定量阳性面积与阳性核',
+    stains: [[0.684, 0.696, 0.183], [0.25, 0.5, 0.85]],
+    quantifyChannel: 1,
+    quantifyLabel: 'DAB',
+    source: 'Ruifrok & Johnston 2001',
+  },
+  {
+    id: 'h_eosin',
+    label: 'H&E 苏木精-伊红',
+    description: '分离苏木精与伊红，可在伊红通道上定量胞质/间质染色面积',
+    stains: [[0.65, 0.7, 0.29], [0.07, 0.99, 0.11]],
+    quantifyChannel: 1,
+    quantifyLabel: '伊红',
+    source: 'Ruifrok 惯例值（skimage rgb_from_hed 同源）',
+  },
+  {
+    id: 'masson',
+    label: 'Masson 三色',
+    description: '分离苏木精与苯胺蓝，在蓝色通道上定量纤维化（胶原）面积',
+    stains: [[0.55, 0.49, 0.27], [0.4, 0.7, 0.59]],
+    quantifyChannel: 1,
+    quantifyLabel: '苯胺蓝',
+    source: 'Ruifrok 三色惯例值（因染色协议而异，建议用对照片验证）',
+  },
+  {
+    id: 'if_coloc',
+    label: 'IF 免疫荧光共定位',
+    description: '双通道荧光：掩膜 Pearson 相关与 Manders M1/M2 系数',
+    stains: null,
+    quantifyChannel: 0,
+    quantifyLabel: '通道',
+    source: 'Manders 1992 / 1993',
   },
 ];
+
+export function getStainProfile(id: StainProfileId): StainProfile {
+  return STAIN_PROFILES.find((profile) => profile.id === id) ?? STAIN_PROFILES[0];
+}
 
 export const DEFAULT_THRESHOLD: ThresholdConfig = {
   mode: 'auto',
@@ -186,6 +272,7 @@ export function createEmptyProject(): ProjectState {
     threshold: { ...DEFAULT_THRESHOLD },
     segmentation: { ...DEFAULT_SEGMENTATION },
     calibration: { mpp: null },
+    coloc: { ...DEFAULT_COLOC },
     rois: [],
     samples: [],
   };

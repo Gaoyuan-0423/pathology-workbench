@@ -4,6 +4,8 @@ import type { SegmentationConfig, ThresholdConfig } from '../core/types.ts';
 interface ParamsPanelProps {
   threshold: ThresholdConfig;
   segmentation: SegmentationConfig;
+  /** 当前预设的定量通道名（DAB/伊红/苯胺蓝） */
+  quantifyLabel: string;
   disabled: boolean;
   onThresholdChange: (patch: Partial<ThresholdConfig>) => void;
   onSegmentationChange: (patch: Partial<SegmentationConfig>) => void;
@@ -24,6 +26,7 @@ const METHODS: Array<{ id: ThresholdConfig['method']; label: string }> = [
 export default function ParamsPanel({
   threshold,
   segmentation,
+  quantifyLabel,
   disabled,
   onThresholdChange,
   onSegmentationChange,
@@ -36,7 +39,7 @@ export default function ParamsPanel({
 
   return (
     <section className="panel">
-      <h3>阈值与背景</h3>
+      <h3>{quantifyLabel} 阈值与背景</h3>
       <div className="field-row">
         <label>阈值模式</label>
         <div className="segmented">

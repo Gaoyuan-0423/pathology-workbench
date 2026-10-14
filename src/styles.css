@@ -326,6 +326,25 @@ body {
 .chart-preview { margin-top: 10px; overflow-x: auto; }
 .chart-preview svg { max-width: 100%; height: auto; }
 
+.profile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+
+.profile-grid button {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 8px 4px;
+  font-size: 11px;
+  cursor: pointer;
+  text-align: center;
+}
+
+.profile-grid button.profile-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
 .dropzone {
   border: 1.5px dashed var(--border);
   border-radius: var(--radius);

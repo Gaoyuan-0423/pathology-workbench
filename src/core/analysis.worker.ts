@@ -1,23 +1,30 @@
 /**
- * 分析 Worker：解码后的像元级计算全部在此线程执行
- * （去卷积 → 背景扣除 → 阈值 → 苏木精核分割 → 门控计数 → 指标）。
+ * 分析 Worker：解码后的像元级计算全部在此线程执行。
+ * 两条管线：
+ * - 染色预设（h_dab / h_eosin / masson）：去卷积 → 背景扣除 → 阈值 → 核分割 → 指标
+ * - IF 共定位（if_coloc）：逐通道背景扣除与阈值 → 掩膜 Pearson + Manders
  * 通过 requestId 丢弃过期结果；UI 持有最新请求即可。
  */
-import { extractDabChannel, extractHematoxylinChannel } from './image/color.ts';
+import { buildStainMatrix, extractStainChannel } from './image/color.ts';
 import { buildOverlay, clipRect, computeAreaMetrics } from './analysis/metrics.ts';
 import { computeAutoThreshold, histogram256, percentileFromHist } from './analysis/threshold.ts';
+import { buildColocOverlayRgba, computeColocalization } from './analysis/colocalize.ts';
 import {
   connectedComponents,
   gateComponents,
   meanChannelOverComponent,
   summarizeComponents,
 } from './analysis/segment.ts';
+import { getStainProfile } from './types.ts';
 import type {
   AnalysisResult,
   Calibration,
+  ColocConfig,
+  ColocResult,
   Roi,
   RoiMetrics,
   SegmentationConfig,
+  StainProfileId,
   ThresholdConfig,
 } from './types.ts';
 
@@ -25,9 +32,11 @@ export interface AnalysisRequest {
   requestId: number;
   pixels: ImageData;
   rois: Roi[];
+  profileId: StainProfileId;
   threshold: ThresholdConfig;
   segmentation: SegmentationConfig;
   calibration: Calibration;
+  coloc: ColocConfig;
 }
 
 interface WorkerScope {
@@ -38,31 +47,42 @@ const workerSelf = self as unknown as WorkerScope & {
   postMessage: (message: AnalysisResult) => void;
 };
 
-/** 核面积门控按工作图缩放比例换算时使用原始像素面积（配置即工作图像素） */
+workerSelf.onmessage = (event) => {
+  const request = event.data;
+  const result = request.profileId === 'if_coloc'
+    ? runColocAnalysis(request)
+    : runStainAnalysis(request);
+  workerSelf.postMessage(result);
+};
+
 function estimateTotal(count: number, borderCount: number): number {
   if (count <= 0) return 0;
   const value = count + (borderCount * count) / (count + borderCount);
   return Math.round(value * 10) / 10;
 }
 
-workerSelf.onmessage = (event) => {
-  const { requestId, pixels, rois, threshold, segmentation } = event.data;
+// ── 染色预设管线 ──
+
+function runStainAnalysis(request: AnalysisRequest): AnalysisResult {
+  const { requestId, pixels, rois, profileId, threshold, segmentation, calibration } = request;
   const warnings: string[] = [];
   const { width, height } = pixels;
+  const profile = getStainProfile(profileId);
 
-  // 1. Ruifrok 去卷积 → DAB / 苏木精双通道
-  const dab = extractDabChannel(pixels);
-  const hematoxylin = extractHematoxylinChannel(pixels);
+  // 1. 去卷积 → 定量通道 / 核复染通道（第一染色）
+  const matrix = buildStainMatrix(profile.stains![0], profile.stains![1]);
+  const quantified = extractStainChannel(pixels, matrix, profile.quantifyChannel);
+  const nuclearSource = extractStainChannel(pixels, matrix, 0);
 
-  // 2. DAB 背景水平（全图 OD 百分位）并扣除
-  const fullHist = histogram256(dab);
+  // 2. 定量通道背景扣除
+  const fullHist = histogram256(quantified);
   const backgroundLevel = percentileFromHist(fullHist, threshold.backgroundPercentile);
-  for (let i = 0; i < dab.length; i += 1) {
-    const v = dab[i] - backgroundLevel;
-    dab[i] = v > 0 ? v : 0;
+  for (let i = 0; i < quantified.length; i += 1) {
+    const v = quantified[i] - backgroundLevel;
+    quantified[i] = v > 0 ? v : 0;
   }
 
-  // 3. DAB 阈值解析
+  // 3. 阈值解析
   let thresholdUsed: number;
   if (threshold.mode === 'manual') {
     thresholdUsed = Math.min(255, Math.max(0, Math.round(threshold.manualValue)));
@@ -72,21 +92,22 @@ workerSelf.onmessage = (event) => {
     if (threshold.mode === 'control') {
       warnings.push('对照片尚未标定，本次使用 Otsu 自动阈值。');
     }
-    const subtractedHist = histogram256(dab);
-    thresholdUsed = computeAutoThreshold(subtractedHist, threshold.method);
+    thresholdUsed = computeAutoThreshold(histogram256(quantified), threshold.method);
   }
 
-  // 4. 苏木精核分割（逐图 Otsu；不扣背景——核复染在组织内普遍存在）
-  const hHist = histogram256(hematoxylin);
-  const nuclearThresholdUsed = computeAutoThreshold(hHist, 'otsu');
-  const nuclearMask = new Uint8Array(dab.length);
-  for (let i = 0; i < hematoxylin.length; i += 1) {
-    nuclearMask[i] = hematoxylin[i] > nuclearThresholdUsed ? 1 : 0;
+  // 4. 核分割（第一染色通道逐图 Otsu）
+  const nuclearThresholdUsed = computeAutoThreshold(histogram256(nuclearSource), 'otsu');
+  const nuclearMask = new Uint8Array(quantified.length);
+  for (let i = 0; i < nuclearSource.length; i += 1) {
+    nuclearMask[i] = nuclearSource[i] > nuclearThresholdUsed ? 1 : 0;
   }
   const allComponents = connectedComponents(nuclearMask, width, height);
-  const { kept: nuclei, rejectedArea, rejectedCircularity } = gateComponents(allComponents, segmentation);
+  const { kept: nuclei } = gateComponents(allComponents, segmentation);
+  if (nuclei.length === 0 && allComponents.length > 0) {
+    warnings.push('门控参数滤除了全部分割目标，请调整面积/圆度范围。');
+  }
 
-  // 5. 每个核的阳性判定：核内平均 DAB OD > 阈值
+  // 5. 每个核的阳性判定：核内平均定量通道 OD > 阈值
   interface Nucleus {
     cx: number;
     cy: number;
@@ -96,7 +117,6 @@ workerSelf.onmessage = (event) => {
   const nucleusList: Nucleus[] = nuclei.map((component) => {
     let seed = Math.round(component.cy) * width + Math.round(component.cx);
     if (nuclearMask[seed] === 0) {
-      // 环形等非凸目标：在质心附近找掩膜内种子
       const cx = Math.round(component.cx);
       const cy = Math.round(component.cy);
       outer: for (let radius = 1; radius <= 6; radius += 1) {
@@ -114,11 +134,12 @@ workerSelf.onmessage = (event) => {
         }
       }
     }
-    const meanDab = nuclearMask[seed] === 1 ? meanChannelOverComponent(dab, width, nuclearMask, seed) : 0;
+    const meanValue =
+      nuclearMask[seed] === 1 ? meanChannelOverComponent(quantified, width, nuclearMask, seed) : 0;
     return {
       cx: component.cx,
       cy: component.cy,
-      positive: meanDab > thresholdUsed,
+      positive: meanValue > thresholdUsed,
       touchesBorder: component.touchesBorder,
     };
   });
@@ -129,16 +150,12 @@ workerSelf.onmessage = (event) => {
     (sum, item) => sum + (item.positive && item.touchesBorder ? 1 : 0),
     0,
   );
-  const mpp = event.data.calibration?.mpp ?? null;
+  const mpp = calibration?.mpp ?? null;
   const areaMm2Safe = mpp !== null ? (width * height * mpp * mpp) / 1e6 : null;
-  if (rejectedArea + rejectedCircularity > 0 && nuclei.length === 0) {
-    warnings.push('门控参数滤除了全部分割目标，请调整面积/圆度范围。');
-  }
 
-  // 6. 整图与各 ROI 指标
   const fullRect = clipRect({ x: 0, y: 0, w: width, h: height }, width, height);
   const overall = fillNuclei(
-    computeAreaMetrics(dab, width, fullRect, thresholdUsed, {
+    computeAreaMetrics(quantified, width, fullRect, thresholdUsed, {
       roiId: null,
       roiName: '整图',
     }),
@@ -159,12 +176,10 @@ workerSelf.onmessage = (event) => {
     );
     const roiTotal = inside.length;
     const roiPositive = inside.reduce((sum, item) => sum + (item.positive ? 1 : 0), 0);
-    const roiBorder = inside.reduce((sum, item) => sum + (item.touchesBorder ? 1 : 0), 0);
-    const roiEstimated = estimateTotal(roiTotal, roiBorder);
-    const roiAreaMm2 =
-      mpp !== null ? (rect.w * rect.h * event.data.calibration!.mpp! ** 2) / 1e6 : null;
+    const roiEstimated = estimateTotal(roiTotal, inside.reduce((sum, item) => sum + (item.touchesBorder ? 1 : 0), 0));
+    const roiAreaMm2 = mpp !== null ? (rect.w * rect.h * mpp * mpp) / 1e6 : null;
     return fillNuclei(
-      computeAreaMetrics(dab, width, rect, thresholdUsed, {
+      computeAreaMetrics(quantified, width, rect, thresholdUsed, {
         roiId: roi.id,
         roiName: roi.name,
       }),
@@ -182,10 +197,9 @@ workerSelf.onmessage = (event) => {
     );
   });
 
-  // 7. 叠加层（阳性面积填充）
-  const overlay = buildOverlay(dab, width, height, thresholdUsed);
+  const overlay = buildOverlay(quantified, width, height, thresholdUsed);
 
-  const result: AnalysisResult = {
+  return {
     requestId,
     overall,
     perRoi,
@@ -193,10 +207,61 @@ workerSelf.onmessage = (event) => {
     nuclearThresholdUsed,
     backgroundLevel,
     overlay,
+    coloc: null,
     warnings,
   };
-  workerSelf.postMessage(result);
-};
+}
+
+// ── IF 共定位管线 ──
+
+function runColocAnalysis(request: AnalysisRequest): AnalysisResult {
+  const { requestId, pixels, coloc } = request;
+  const warnings: string[] = [];
+  const colocResult: ColocResult = computeColocalization(pixels, coloc);
+
+  const rawA = channelData(pixels, coloc.channelA);
+  const rawB = channelData(pixels, coloc.channelB);
+  for (let i = 0; i < rawA.length; i += 1) {
+    rawA[i] = Math.max(0, rawA[i] - colocResult.backgroundA);
+    rawB[i] = Math.max(0, rawB[i] - colocResult.backgroundB);
+  }
+  const overlayRgba = buildColocOverlayRgba(rawA, rawB, colocResult.thresholdA, colocResult.thresholdB);
+  const overlay = new ImageData(new Uint8ClampedArray(overlayRgba), pixels.width, pixels.height);
+
+  const metrics: RoiMetrics = {
+    roiId: null,
+    roiName: '整图',
+    pixelCount: pixels.width * pixels.height,
+    positiveFraction: colocResult.mandersM1,
+    positiveNuclei: 0,
+    totalNuclei: 0,
+    labelingIndex: null,
+    borderNuclei: 0,
+    integratedOpticalDensity: 0,
+    meanOpticalDensity: null,
+    estimatedTotalCount: null,
+    densityPerMm2: null,
+  };
+  return {
+    requestId,
+    overall: metrics,
+    perRoi: [],
+    thresholdUsed: colocResult.thresholdA,
+    nuclearThresholdUsed: colocResult.thresholdB,
+    backgroundLevel: colocResult.backgroundA,
+    overlay,
+    coloc: colocResult,
+    warnings,
+  };
+}
+
+function channelData(pixels: ImageData, channel: 0 | 1 | 2): Float32Array {
+  const out = new Float32Array(pixels.width * pixels.height);
+  for (let i = 0, p = 0; i < out.length; i += 1, p += 4) {
+    out[i] = pixels.data[p + channel];
+  }
+  return out;
+}
 
 function fillNuclei(base: RoiMetrics, nuclei: Partial<RoiMetrics>): RoiMetrics {
   return { ...base, ...nuclei };

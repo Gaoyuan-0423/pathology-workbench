@@ -7,15 +7,20 @@ import { extractDabChannel } from './core/image/color.ts';
 import { decodeImageFile } from './core/image/decode.ts';
 import {
   createEmptyProject,
+  DEFAULT_COLOC,
   DEFAULT_SEGMENTATION,
   DEFAULT_THRESHOLD,
+  getStainProfile,
+  STAIN_PROFILES,
   type AnalysisResult,
+  type ColocConfig,
   type ProjectState,
   type Roi,
   type SegmentationConfig,
   type ThresholdConfig,
 } from './core/types.ts';
 import CanvasView from './ui/CanvasView.tsx';
+import ColocPanel from './ui/ColocPanel.tsx';
 import InfoPanel from './ui/InfoPanel.tsx';
 import ParamsPanel from './ui/ParamsPanel.tsx';
 import ResultsPanel from './ui/ResultsPanel.tsx';
@@ -93,6 +98,7 @@ export default function App() {
             ...saved,
             threshold: { ...DEFAULT_THRESHOLD, ...saved.threshold },
             segmentation: { ...DEFAULT_SEGMENTATION, ...saved.segmentation },
+            coloc: { ...DEFAULT_COLOC, ...saved.coloc },
           });
         }
       } finally {
@@ -110,7 +116,7 @@ export default function App() {
     return () => window.clearTimeout(saveTimer.current);
   }, [project, loaded]);
 
-  const { pixels, rois, threshold, segmentation, calibration } = project;
+  const { pixels, rois, profileId, threshold, segmentation, calibration, coloc } = project;
   useEffect(() => {
     if (!pixels) {
       setAnalysis(null);
@@ -119,13 +125,13 @@ export default function App() {
     }
     setAnalyzing(true);
     const timer = window.setTimeout(() => {
-      void runAnalysis(pixels, rois, threshold, segmentation, calibration).then((result) => {
+      void runAnalysis(pixels, rois, profileId, threshold, segmentation, calibration, coloc).then((result) => {
         setAnalysis(result);
         setAnalyzing(false);
       });
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [pixels, rois, threshold, segmentation, calibration]);
+  }, [pixels, rois, profileId, threshold, segmentation, calibration, coloc]);
 
   const handleFile = useCallback(async (file: File) => {
     setStatus({ kind: 'busy', message: `正在解码 ${file.name}…` });
@@ -206,6 +212,10 @@ export default function App() {
     setProject((prev) => ({ ...prev, threshold: { ...prev.threshold, ...patch } }));
   }, []);
 
+  const patchColoc = useCallback((patch: Partial<ColocConfig>) => {
+    setProject((prev) => ({ ...prev, coloc: { ...prev.coloc, ...patch } }));
+  }, []);
+
   const patchSegmentation = useCallback((patch: Partial<SegmentationConfig>) => {
     setProject((prev) => ({ ...prev, segmentation: { ...prev.segmentation, ...patch } }));
   }, []);
@@ -252,12 +262,13 @@ export default function App() {
   }, []);
 
   const hasImage = Boolean(project.pixels);
+  const isColoc = project.profileId === 'if_coloc';
   return (
     <div className="app">
       <header className="app-header">
         <div>
           <h1>Pathology Workbench</h1>
-          <p className="app-subtitle">离线免疫组化 H-DAB 定量 · 颜色去卷积 · 阈值分割 · 统计与出版导出</p>
+          <p className="app-subtitle">离线病理染色定量 · 免疫荧光共定位 · 颜色去卷积 · 统计与出版导出</p>
         </div>
         {status.message && (
           <span className={`status status-${status.kind}`} role="status">{status.message}</span>
@@ -276,6 +287,22 @@ export default function App() {
           />
         </div>
         <aside className="side-panel">
+          <section className="panel">
+            <h3>分析预设</h3>
+            <div className="profile-grid">
+              {STAIN_PROFILES.map((profile) => (
+                <button
+                  key={profile.id}
+                  type="button"
+                  title={profile.description}
+                  className={project.profileId === profile.id ? 'profile-active' : ''}
+                  onClick={() => setProject((prev) => ({ ...prev, profileId: profile.id }))}
+                >
+                  {profile.label}
+                </button>
+              ))}
+            </div>
+          </section>
           <UploadPanel busy={status.kind === 'busy'} onFile={(file) => void handleFile(file)} />
           <InfoPanel
             image={project.image}
@@ -298,20 +325,31 @@ export default function App() {
               onCancel={() => setPendingLinePx(null)}
             />
           )}
-          <ParamsPanel
-            threshold={project.threshold}
-            segmentation={project.segmentation}
-            disabled={!hasImage || analyzing}
-            onThresholdChange={patchThreshold}
-            onSegmentationChange={patchSegmentation}
-            onCalibrateControl={(file) => void handleCalibrateControl(file)}
-            calibrating={calibrating}
-            showOverlay={showOverlay}
-            onShowOverlayChange={setShowOverlay}
-          />
+          {isColoc ? (
+            <ColocPanel
+              coloc={project.coloc}
+              disabled={!hasImage || analyzing}
+              onChange={patchColoc}
+              showOverlay={showOverlay}
+              onShowOverlayChange={setShowOverlay}
+            />
+          ) : (
+            <ParamsPanel
+              threshold={project.threshold}
+              segmentation={project.segmentation}
+              quantifyLabel={getStainProfile(project.profileId).quantifyLabel}
+              disabled={!hasImage || analyzing}
+              onThresholdChange={patchThreshold}
+              onSegmentationChange={patchSegmentation}
+              onCalibrateControl={(file) => void handleCalibrateControl(file)}
+              calibrating={calibrating}
+              showOverlay={showOverlay}
+              onShowOverlayChange={setShowOverlay}
+            />
+          )}
           <SamplesPanel
             project={project}
-            canAddSample={Boolean(analysis)}
+            canAddSample={Boolean(analysis) && !isColoc}
             disabled={analyzing}
             onAddSample={addSample}
             onUpdateSample={updateSample}

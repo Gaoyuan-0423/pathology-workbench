@@ -37,15 +37,16 @@ export function crossProduct(a: Vec3, b: Vec3): Vec3 {
 }
 
 export interface DeconvolutionMatrix {
-  /** 单位化后的行向量：hematoxylin / dab / residual（相互正交） */
+  /** 单位化后的行向量：第一染色 / 第二染色 / 残差（相互正交） */
   stains: [Vec3, Vec3, Vec3];
   /** M⁻¹（行 = 各染色浓度的系数），解 c = inv·od */
   inverse: number[][];
 }
 
-export function buildHdabMatrix(): DeconvolutionMatrix {
-  const h = normalizeVector(HEMATOXYLIN_VECTOR);
-  const d = normalizeVector(DAB_VECTOR);
+/** 由双色向量构建去卷积矩阵（残差取叉积正交补）——任意染色预设通用 */
+export function buildStainMatrix(first: Vec3, second: Vec3): DeconvolutionMatrix {
+  const h = normalizeVector(first);
+  const d = normalizeVector(second);
   const residual = normalizeVector(crossProduct(h, d));
   const stains: [Vec3, Vec3, Vec3] = [h, d, residual];
 
@@ -59,7 +60,7 @@ export function buildHdabMatrix(): DeconvolutionMatrix {
     m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) -
     m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) +
     m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
-  if (Math.abs(det) < 1e-12) throw new Error('H-DAB 去卷积矩阵奇异');
+  if (Math.abs(det) < 1e-12) throw new Error('去卷积矩阵奇异');
   const inv = [
     [
       (m[1][1] * m[2][2] - m[1][2] * m[2][1]) / det,
@@ -78,6 +79,11 @@ export function buildHdabMatrix(): DeconvolutionMatrix {
     ],
   ];
   return { stains, inverse: inv };
+}
+
+/** H-DAB 预设便捷入口（v1 兼容） */
+export function buildHdabMatrix(): DeconvolutionMatrix {
+  return buildStainMatrix(HEMATOXYLIN_VECTOR, DAB_VECTOR);
 }
 
 /** 便捷单像素 OD 向量 */
@@ -103,28 +109,28 @@ export interface RgbaPixels {
   height: number;
 }
 
-/** 提取整幅图像的 DAB 通道（0–255 OD 标尺，负值截断为 0） */
-export function extractDabChannel(pixels: RgbaPixels): Float32Array {
+/** 提取指定染色通道（0 = 第一染色，1 = 第二染色；0–255 OD 标尺，负值截断为 0） */
+export function extractStainChannel(
+  pixels: RgbaPixels,
+  matrix: DeconvolutionMatrix,
+  channelIndex: 0 | 1,
+): Float32Array {
   const { data, width, height } = pixels;
   const out = new Float32Array(width * height);
-  const { inverse } = buildHdabMatrix();
   for (let i = 0, p = 0; i < out.length; i += 1, p += 4) {
     const od = pixelToOd(data[p], data[p + 1], data[p + 2]);
-    const dab = applyInverse(inverse, od)[1];
-    out[i] = dab > 0 ? dab : 0;
+    const value = applyInverse(matrix.inverse, od)[channelIndex];
+    out[i] = value > 0 ? value : 0;
   }
   return out;
 }
 
+/** 提取 DAB 通道（H-DAB 预设便捷入口） */
+export function extractDabChannel(pixels: RgbaPixels): Float32Array {
+  return extractStainChannel(pixels, buildHdabMatrix(), 1);
+}
+
 /** 提取苏木精通道（对称用途：核复染检查、双层展示） */
 export function extractHematoxylinChannel(pixels: RgbaPixels): Float32Array {
-  const { data, width, height } = pixels;
-  const out = new Float32Array(width * height);
-  const { inverse } = buildHdabMatrix();
-  for (let i = 0, p = 0; i < out.length; i += 1, p += 4) {
-    const od = pixelToOd(data[p], data[p + 1], data[p + 2]);
-    const h = applyInverse(inverse, od)[0];
-    out[i] = h > 0 ? h : 0;
-  }
-  return out;
+  return extractStainChannel(pixels, buildHdabMatrix(), 0);
 }
