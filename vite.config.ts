@@ -1,20 +1,27 @@
 /// <reference types="vitest/config" />
-import { copyFileSync, mkdirSync } from 'node:fs'
+import { copyFileSync, mkdirSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import react from '@vitejs/plugin-react'
 import { defineConfig, type Plugin } from 'vite'
 
-const copyOrtWasm: Plugin = {
-  name: 'copy-ort-wasm',
-  // onnxruntime-web 的 wasm/mjs 复制到 dist/ort/（离线推理，不走 CDN）
+const copyStaticAssets: Plugin = {
+  name: 'copy-static-assets',
   apply: 'build',
   closeBundle() {
     const root = fileURLToPath(new URL('.', import.meta.url))
-    const sourceDir = root + 'node_modules/onnxruntime-web/dist'
-    const targetDir = root + 'dist/ort'
-    mkdirSync(targetDir, { recursive: true })
+    // onnxruntime-web 的 wasm/mjs → dist/ort/（离线推理，不走 CDN）
+    const ortSource = root + 'node_modules/onnxruntime-web/dist'
+    const ortTarget = root + 'dist/ort'
+    mkdirSync(ortTarget, { recursive: true })
     for (const file of ['ort-wasm-simd-threaded.mjs', 'ort-wasm-simd-threaded.wasm']) {
-      copyFileSync(sourceDir + '/' + file, targetDir + '/' + file)
+      copyFileSync(ortSource + '/' + file, ortTarget + '/' + file)
+    }
+    // README 截图 → dist/screenshots/（Pages 上 README 图片可访问）
+    const shotsSource = root + 'docs/screenshots'
+    const shotsTarget = root + 'dist/screenshots'
+    mkdirSync(shotsTarget, { recursive: true })
+    for (const file of readdirSync(shotsSource)) {
+      copyFileSync(shotsSource + '/' + file, shotsTarget + '/' + file)
     }
   },
 }
@@ -22,7 +29,7 @@ const copyOrtWasm: Plugin = {
 // https://vite.dev/config/
 export default defineConfig({
   base: './',
-  plugins: [react(), copyOrtWasm],
+  plugins: [react(), copyStaticAssets],
   test: {
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     environment: 'node',
