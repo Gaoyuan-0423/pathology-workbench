@@ -61,6 +61,18 @@ describe('generateMethodsZh / En', () => {
     expect(en).toContain('0.5 μm/px');
   });
 
+  it('自定义向量在 Methods 中明示', () => {
+    const customized = {
+      ...project,
+      stainOverrides: { h_dab: [[0.7, 0.68, 0.19], [0.26, 0.52, 0.81]] as [[number, number, number], [number, number, number]] },
+    };
+    const zh = generateMethodsZh(customized, result);
+    expect(zh).toContain('用户自定义向量');
+    expect(zh).toContain('0.700/0.680/0.190');
+    const en = generateMethodsEn(customized, result);
+    expect(en).toContain('user-adjusted');
+  });
+
   it('对照片未标定时回落说明', () => {
     const fallback = generateMethodsZh(
       { ...project, threshold: { ...DEFAULT_THRESHOLD, mode: 'control', controlThreshold: null, controlImageName: null } },

@@ -1,7 +1,7 @@
 /**
  * 主线程侧的分析客户端：持有唯一 Worker，按 requestId 对齐响应，过期结果直接丢弃。
  */
-import type { AnalysisResult, Calibration, ColocConfig, Roi, SegmentationConfig, StainProfileId, ThresholdConfig } from './types.ts';
+import type { AnalysisResult, Calibration, ColocConfig, Roi, SegmentationConfig, StainProfileId, ThresholdConfig, Vec3 } from './types.ts';
 import type { AnalysisRequest } from './analysis.worker.ts';
 
 let worker: Worker | null = null;
@@ -29,6 +29,7 @@ export function runAnalysis(
   segmentation: SegmentationConfig,
   calibration: Calibration,
   coloc: ColocConfig,
+  stainOverride: [Vec3, Vec3] | null,
 ): Promise<AnalysisResult> {
   const requestId = nextRequestId;
   nextRequestId += 1;
@@ -44,6 +45,7 @@ export function runAnalysis(
     segmentation,
     calibration,
     coloc,
+    stainOverride,
   };
   ensureWorker().postMessage(request);
   return promise;

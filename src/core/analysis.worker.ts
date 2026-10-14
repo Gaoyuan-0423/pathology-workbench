@@ -16,6 +16,7 @@ import {
   summarizeComponents,
 } from './analysis/segment.ts';
 import { getStainProfile } from './types.ts';
+import type { Vec3 } from './types.ts';
 import type {
   AnalysisResult,
   Calibration,
@@ -37,6 +38,8 @@ export interface AnalysisRequest {
   segmentation: SegmentationConfig;
   calibration: Calibration;
   coloc: ColocConfig;
+  /** 用户自定义染色向量（null = 预设默认） */
+  stainOverride: [Vec3, Vec3] | null;
 }
 
 interface WorkerScope {
@@ -69,8 +72,16 @@ function runStainAnalysis(request: AnalysisRequest): AnalysisResult {
   const { width, height } = pixels;
   const profile = getStainProfile(profileId);
 
-  // 1. 去卷积 → 定量通道 / 核复染通道（第一染色）
-  const matrix = buildStainMatrix(profile.stains![0], profile.stains![1]);
+  // 1. 去卷积 → 定量通道 / 核复染通道（第一染色）；用户自定义向量优先，奇异时回落预设
+  let stainPair = request.stainOverride ?? profile.stains!;
+  let matrix: ReturnType<typeof buildStainMatrix>;
+  try {
+    matrix = buildStainMatrix(stainPair[0], stainPair[1]);
+  } catch {
+    warnings.push('自定义染色向量近乎共线，已回落为预设向量。');
+    stainPair = profile.stains!;
+    matrix = buildStainMatrix(stainPair[0], stainPair[1]);
+  }
   const quantified = extractStainChannel(pixels, matrix, profile.quantifyChannel);
   const nuclearSource = extractStainChannel(pixels, matrix, 0);
 

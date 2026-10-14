@@ -345,6 +345,19 @@ body {
   color: white;
 }
 
+.advanced-block { margin-top: 10px; font-size: 12px; }
+.advanced-block summary { cursor: pointer; color: var(--text-dim); }
+.advanced-block[open] summary { margin-bottom: 8px; }
+.vector-inputs { display: flex; gap: 4px; flex: 1; }
+.vector-inputs input {
+  width: 100%;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 12px;
+  min-width: 0;
+}
+
 .batch-progress { margin-top: 8px; }
 
 .batch-bar {

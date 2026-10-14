@@ -17,7 +17,9 @@ import {
   type ProjectState,
   type Roi,
   type SegmentationConfig,
+  type StainProfileId,
   type ThresholdConfig,
+  type Vec3 as StainVec,
 } from './core/types.ts';
 import BatchPanel, { type BatchState } from './ui/BatchPanel.tsx';
 import CanvasView from './ui/CanvasView.tsx';
@@ -100,6 +102,7 @@ export default function App() {
             threshold: { ...DEFAULT_THRESHOLD, ...saved.threshold },
             segmentation: { ...DEFAULT_SEGMENTATION, ...saved.segmentation },
             coloc: { ...DEFAULT_COLOC, ...saved.coloc },
+            stainOverrides: saved.stainOverrides ?? {},
           });
         }
       } finally {
@@ -118,6 +121,7 @@ export default function App() {
   }, [project, loaded]);
 
   const { pixels, rois, profileId, threshold, segmentation, calibration, coloc } = project;
+  const stainOverride = project.stainOverrides[profileId] ?? null;
   useEffect(() => {
     if (!pixels) {
       setAnalysis(null);
@@ -126,13 +130,13 @@ export default function App() {
     }
     setAnalyzing(true);
     const timer = window.setTimeout(() => {
-      void runAnalysis(pixels, rois, profileId, threshold, segmentation, calibration, coloc).then((result) => {
+      void runAnalysis(pixels, rois, profileId, threshold, segmentation, calibration, coloc, stainOverride).then((result) => {
         setAnalysis(result);
         setAnalyzing(false);
       });
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [pixels, rois, profileId, threshold, segmentation, calibration, coloc]);
+  }, [pixels, rois, profileId, threshold, segmentation, calibration, coloc, stainOverride]);
 
   const handleFile = useCallback(async (file: File) => {
     setStatus({ kind: 'busy', message: `正在解码 ${file.name}…` });
@@ -214,6 +218,7 @@ export default function App() {
         segmentation: project.segmentation,
         calibration: project.calibration,
         coloc: project.coloc,
+        stainOverride: project.stainOverrides[project.profileId] ?? null,
       };
       const errors: string[] = [];
       let done = 0;
@@ -235,6 +240,7 @@ export default function App() {
             config.segmentation,
             config.calibration,
             config.coloc,
+            config.stainOverride,
           );
           setProject((prev) => ({
             ...prev,
@@ -278,6 +284,15 @@ export default function App() {
 
   const patchColoc = useCallback((patch: Partial<ColocConfig>) => {
     setProject((prev) => ({ ...prev, coloc: { ...prev.coloc, ...patch } }));
+  }, []);
+
+  const setStainOverride = useCallback((profileId: StainProfileId, pair: [StainVec, StainVec] | null) => {
+    setProject((prev) => {
+      const next = { ...prev.stainOverrides };
+      if (pair === null) delete next[profileId];
+      else next[profileId] = pair;
+      return { ...prev, stainOverrides: next };
+    });
   }, []);
 
   const patchSegmentation = useCallback((patch: Partial<SegmentationConfig>) => {
@@ -412,6 +427,9 @@ export default function App() {
               threshold={project.threshold}
               segmentation={project.segmentation}
               quantifyLabel={getStainProfile(project.profileId).quantifyLabel}
+              stainVectors={stainOverride ?? getStainProfile(project.profileId).stains}
+              presetVectors={getStainProfile(project.profileId).stains}
+              onVectorsChange={(pair) => setStainOverride(project.profileId, pair)}
               disabled={!hasImage || analyzing}
               onThresholdChange={patchThreshold}
               onSegmentationChange={patchSegmentation}

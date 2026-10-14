@@ -29,10 +29,14 @@ export function generateMethodsZh(project: ProjectState, result: AnalysisResult 
           ? `由未染色对照片标定：取对照片 DAB 光密度分布的 (1−${threshold.controlFalsePositiveRate}) 分位（阈值 ${threshold.controlThreshold}，对照片 ${threshold.controlImageName ?? '未知'}），并统一应用于全部图像`
           : '对照片未标定，回落为逐图 Otsu';
   const scaleDesc = image.workingScale === 1 ? '1:1' : '1:' + image.workingScale.toFixed(2);
+  const override = project.stainOverrides[project.profileId];
+  const vectorDesc = override
+    ? `用户自定义向量（第一染色 ${override[0].map((v) => v.toFixed(3)).join('/')}，第二染色 ${override[1].map((v) => v.toFixed(3)).join('/')}）`
+    : '预设文献向量';
   const lines = [
     `免疫组化图像定量在浏览器端离线完成（Pathology Workbench v0.1，数据不经网络传输）。`,
     `图像（${image.name}，${image.sourceType}）解码后按最长边 ≤4096 px 建立工作图（缩放 ${scaleDesc}），16 位图像按固定 v/257 标尺映射至 8 位，不做逐图对比度拉伸；色彩假定 sRGB。`,
-    `经 Ruifrok 颜色去卷积（标准苏木精–DAB 向量）分离 DAB 通道，光密度定义为 OD = 255·ln(255/(I+1))/ln255（0–255 标尺），并按全图 OD 第 ${threshold.backgroundPercentile} 百分位扣除背景。`,
+    `经 Ruifrok 颜色去卷积（${vectorDesc}）分离 DAB 通道，光密度定义为 OD = 255·ln(255/(I+1))/ln255（0–255 标尺），并按全图 OD 第 ${threshold.backgroundPercentile} 百分位扣除背景。`,
     `DAB 阳性阈值${thresholdDesc}（本次生效阈值 ${result?.thresholdUsed ?? '—'}，0–255）。`,
     `细胞核由苏木精通道逐图 Otsu 阈值（本次 ${result?.nuclearThresholdUsed ?? '—'}）分割，8 连通域标记后按面积 ${segmentation.minAreaPx}–${segmentation.maxAreaPx} px、圆度 ≥ ${segmentation.minCircularity}（4πA/P²，P 为 4 邻域边界边计数周长）门控；核内平均 DAB OD 高于阳性阈值者判为 DAB 阳性核。与图像边界相交的目标按 n + b·n/(n+b) 折算总数（n 为目标数，b 为其中触边者）。`,
     calibration.mpp
@@ -47,6 +51,10 @@ export function generateMethodsEn(project: ProjectState, result: AnalysisResult 
   const { threshold, segmentation, calibration, image } = project;
   if (!image) return '';
   const scaleDesc = image.workingScale === 1 ? '1:1' : '1:' + image.workingScale.toFixed(2);
+  const override = project.stainOverrides[project.profileId];
+  const vectorDesc = override
+    ? 'user-adjusted vectors (stain 1: ' + override[0].map((v) => v.toFixed(3)).join('/') + '; stain 2: ' + override[1].map((v) => v.toFixed(3)).join('/') + ')'
+    : 'standard literature vectors';
   let thresholdDesc: string;
   if (threshold.mode === 'auto') {
     thresholdDesc = 'determined per image by ' + (METHOD_NAMES_EN[threshold.method] ?? threshold.method);
@@ -68,7 +76,7 @@ export function generateMethodsEn(project: ProjectState, result: AnalysisResult 
       scaleDesc + '); 16-bit data were mapped to 8 bit with the fixed v/257 scale (no per-image contrast stretching), assuming sRGB.',
   );
   lines.push(
-    'The DAB channel was isolated by Ruifrok colour deconvolution with the standard haematoxylin–DAB vectors; optical density was defined as OD = 255·ln(255/(I+1))/ln255 (0–255 scale) and the background was removed by subtracting the ' +
+    'The DAB channel was isolated by Ruifrok colour deconvolution with ' + vectorDesc.replace('user-adjusted vectors', 'user-adjusted stain vectors') + '; deconvolution used the haematoxylin–DAB basis; optical density was defined as OD = 255·ln(255/(I+1))/ln255 (0–255 scale) and the background was removed by subtracting the ' +
       threshold.backgroundPercentile + 'th percentile of whole-image OD.',
   );
   lines.push('The DAB positivity threshold was ' + thresholdDesc + ' (effective threshold ' + (result?.thresholdUsed ?? '—') + ').');

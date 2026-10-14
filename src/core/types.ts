@@ -179,6 +179,8 @@ export interface ProjectState {
   segmentation: SegmentationConfig;
   calibration: Calibration;
   coloc: ColocConfig;
+  /** 用户自定义染色向量覆盖（键为 profileId；仅染色预设生效） */
+  stainOverrides: Partial<Record<StainProfileId, [Vec3, Vec3]>>;
   rois: Roi[];
   samples: SampleRecord[];
 }
@@ -273,6 +275,7 @@ export function createEmptyProject(): ProjectState {
     segmentation: { ...DEFAULT_SEGMENTATION },
     calibration: { mpp: null },
     coloc: { ...DEFAULT_COLOC },
+    stainOverrides: {},
     rois: [],
     samples: [],
   };

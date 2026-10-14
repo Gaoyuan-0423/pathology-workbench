@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import type { SegmentationConfig, ThresholdConfig } from '../core/types.ts';
+import type { SegmentationConfig, ThresholdConfig, Vec3 } from '../core/types.ts';
 
 interface ParamsPanelProps {
   threshold: ThresholdConfig;
@@ -14,6 +14,10 @@ interface ParamsPanelProps {
   calibrating: boolean;
   showOverlay: boolean;
   onShowOverlayChange: (value: boolean) => void;
+  /** 当前生效向量（自定义或预设）与预设向量 */
+  stainVectors: [Vec3, Vec3] | null;
+  presetVectors: [Vec3, Vec3] | null;
+  onVectorsChange: (pair: [Vec3, Vec3] | null) => void;
 }
 
 const METHODS: Array<{ id: ThresholdConfig['method']; label: string }> = [
@@ -27,6 +31,9 @@ export default function ParamsPanel({
   threshold,
   segmentation,
   quantifyLabel,
+  stainVectors,
+  presetVectors,
+  onVectorsChange,
   disabled,
   onThresholdChange,
   onSegmentationChange,
@@ -203,6 +210,46 @@ export default function ParamsPanel({
       <p className="panel-note">
         核由苏木精通道逐图 Otsu 分割；圆度按 4 邻域边界周长定义（4πA/P²，偏低估）。
       </p>
+
+      {presetVectors && (
+        <details className="advanced-block">
+          <summary>高级：染色向量微调</summary>
+          <p className="panel-note">
+            当前向量出自预设文献值{stainVectors === presetVectors ? '' : '（已自定义）'}。
+            两种染色的 RGB 向量按你的实际染色协议微调；两向量近乎平行时无法去卷积。
+          </p>
+          {([0, 1] as const).map((slot) => (
+            <div key={slot} className="field-row">
+              <label>{slot === 0 ? '第一染色 RGB' : `第二染色（${quantifyLabel}）RGB`}</label>
+              <span className="vector-inputs">
+                {([0, 1, 2] as const).map((component) => (
+                  <input
+                    key={component}
+                    type="number"
+                    min={-1}
+                    max={1}
+                    step={0.001}
+                    value={(stainVectors ?? presetVectors)[slot][component]}
+                    disabled={disabled}
+                    onChange={(event) => {
+                      const current = stainVectors ?? presetVectors;
+                      const pair: [Vec3, Vec3] = [current[0], current[1]];
+                      pair[slot] = [...pair[slot]] as Vec3;
+                      pair[slot][component] = Number(event.target.value) || 0;
+                      onVectorsChange(pair);
+                    }}
+                  />
+                ))}
+              </span>
+            </div>
+          ))}
+          {stainVectors !== presetVectors && (
+            <button type="button" className="link-button" onClick={() => onVectorsChange(null)}>
+              恢复预设向量
+            </button>
+          )}
+        </details>
+      )}
 
       <label className="check-row">
         <input
