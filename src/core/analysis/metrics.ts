@@ -87,18 +87,15 @@ export function computeAreaMetrics(
   };
 }
 
-/** DAB 通道 + 掩膜 → 紫色叠加层（主线程直接合成到画布） */
-export function buildOverlay(
+/** 通道掩膜 → 紫色叠加层 RGBA（无 DOM 依赖；Worker/UI 各自包成 ImageData） */
+export function buildOverlayRgba(
   dab: Float32Array,
-  width: number,
-  height: number,
   threshold: number,
-): ImageData {
-  const out = new ImageData(width, height);
-  const data = out.data;
-  for (let i = 0, p = 0; p < data.length; i += 1, p += 4) {
+): Uint8ClampedArray {
+  const out = new Uint8ClampedArray(dab.length * 4);
+  for (let i = 0, p = 0; p < out.length; i += 1, p += 4) {
     if (dab[i] > threshold) {
-      data[p] = 168; data[p + 1] = 85; data[p + 2] = 247; data[p + 3] = 110;
+      out[p] = 168; out[p + 1] = 85; out[p + 2] = 247; out[p + 3] = 110;
     }
   }
   return out;
