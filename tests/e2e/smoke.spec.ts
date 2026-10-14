@@ -30,3 +30,23 @@ test('合成 IHC 图像全流程：导入 → 自动分析 → 指标可见 → 
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toMatch(/pathology-workbench-.*\.xlsx$/);
 });
+
+test('批处理：多张合成图逐张分析入样本库', async ({ page }) => {
+  const first = createSyntheticHdabPng(360, 260);
+  const second = createSyntheticHdabPng(380, 280);
+  await page.goto('/');
+
+  await page.setInputFiles('input[type="file"][aria-label="批处理图像"]', [
+    { name: 'batch-1.png', mimeType: 'image/png', buffer: first.buffer },
+    { name: 'batch-2.png', mimeType: 'image/png', buffer: second.buffer },
+  ]);
+
+  // 批处理完成后两条样本在库中（分组默认"对照组"，名字来自文件名去扩展名）
+  await expect(page.getByRole('status')).toContainText('批处理完成：成功 2，失败 0', { timeout: 30_000 });
+  await expect(page.getByText('batch-1', { exact: false })).toBeVisible();
+  await expect(page.getByText('batch-2', { exact: false })).toBeVisible();
+
+  // 样本数达到阈值 → 比较指标选择器出现
+  await expect(page.getByText('比较指标')).toBeVisible();
+});
+

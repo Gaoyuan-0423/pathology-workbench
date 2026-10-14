@@ -117,7 +117,7 @@ export default function SamplesPanel({
         </ul>
       )}
 
-      {project.samples.length >= 4 && (
+      {project.samples.length >= 2 && (
         <div className="field-row">
           <label>比较指标</label>
           <select value={metric} onChange={(event) => setMetric(event.target.value as MetricKey)}>

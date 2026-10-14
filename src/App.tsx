@@ -19,6 +19,7 @@ import {
   type SegmentationConfig,
   type ThresholdConfig,
 } from './core/types.ts';
+import BatchPanel, { type BatchState } from './ui/BatchPanel.tsx';
 import CanvasView from './ui/CanvasView.tsx';
 import ColocPanel from './ui/ColocPanel.tsx';
 import InfoPanel from './ui/InfoPanel.tsx';
@@ -201,6 +202,69 @@ export default function App() {
     [project.threshold.backgroundPercentile, project.threshold.controlFalsePositiveRate],
   );
 
+  const batchCancelRef = useRef(false);
+  const [batch, setBatch] = useState<BatchState | null>(null);
+
+  const runBatch = useCallback(
+    async (files: File[], group: string) => {
+      batchCancelRef.current = false;
+      const config = {
+        profileId: project.profileId,
+        threshold: project.threshold,
+        segmentation: project.segmentation,
+        calibration: project.calibration,
+        coloc: project.coloc,
+      };
+      const errors: string[] = [];
+      let done = 0;
+      setBatch({ running: true, total: files.length, done: 0, current: files[0]?.name ?? '', errors, cancelled: false });
+      for (const file of files) {
+        if (batchCancelRef.current) {
+          setBatch((prev) => prev && { ...prev, running: false, current: '', cancelled: true });
+          setStatus({ kind: 'ok', message: `批处理已取消：完成 ${done}/${files.length}` });
+          return;
+        }
+        setBatch((prev) => prev && { ...prev, current: file.name });
+        try {
+          const decoded = await decodeImageFile(file);
+          const result = await runAnalysis(
+            decoded.pixels,
+            [],
+            config.profileId,
+            config.threshold,
+            config.segmentation,
+            config.calibration,
+            config.coloc,
+          );
+          setProject((prev) => ({
+            ...prev,
+            samples: [
+              ...prev.samples,
+              {
+                id: crypto.randomUUID(),
+                name: file.name.replace(/\.[^.]+$/, ''),
+                group,
+                imageName: file.name,
+                addedAt: Date.now(),
+                metrics: result.overall,
+              },
+            ],
+          }));
+        } catch (error) {
+          errors.push(`${file.name}：${error instanceof Error ? error.message : String(error)}`);
+        }
+        done += 1;
+        setBatch((prev) => prev && { ...prev, done, errors: [...errors] });
+      }
+      setBatch((prev) => prev && { ...prev, running: false, current: '' });
+      setStatus({
+        kind: errors.length > 0 ? 'error' : 'ok',
+        message: `批处理完成：成功 ${done - errors.length}，失败 ${errors.length}`,
+      });
+    },
+    [project.profileId, project.threshold, project.segmentation, project.calibration, project.coloc],
+  );
+
   const clearImage = useCallback(() => {
     setProject(createEmptyProject());
     setDrawMode('none');
@@ -310,6 +374,16 @@ export default function App() {
             onMppChange={(mpp) => setProject((prev) => ({ ...prev, calibration: { mpp } }))}
             onClear={clearImage}
           />
+          {!isColoc && (
+            <BatchPanel
+              disabled={false}
+              batch={batch}
+              onBatch={(files, group) => void runBatch(files, group)}
+              onCancel={() => {
+                batchCancelRef.current = true;
+              }}
+            />
+          )}
           <RoiList
             rois={project.rois}
             drawRoi={drawMode === 'roi'}
