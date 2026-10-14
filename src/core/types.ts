@@ -200,6 +200,10 @@ export interface AnalysisResult {
   overlay: ImageData | null;
   /** 仅 if_coloc 模式非空 */
   coloc: ColocResult | null;
+  /** 本次核分割是否使用了 AI 概率图 */
+  aiUsed: boolean;
+  /** Worker 当前装载的 AI 模型名（供客户端判断是否需要重传字节） */
+  aiModelLoaded: string | null;
   warnings: string[];
 }
 

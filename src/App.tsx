@@ -22,6 +22,7 @@ import {
   type Vec3 as StainVec,
 } from './core/types.ts';
 import BatchPanel, { type BatchState } from './ui/BatchPanel.tsx';
+import AiPanel from './ui/AiPanel.tsx';
 import CanvasView from './ui/CanvasView.tsx';
 import ColocPanel from './ui/ColocPanel.tsx';
 import InfoPanel from './ui/InfoPanel.tsx';
@@ -90,6 +91,13 @@ export default function App() {
   const [calibrating, setCalibrating] = useState(false);
   const [pendingLinePx, setPendingLinePx] = useState<number | null>(null);
   const saveTimer = useRef<number | undefined>(undefined);
+  const aiModelRef = useRef<{ name: string; bytes: ArrayBuffer } | null>(null);
+  const lastLoadedModelRef = useRef<string | null>(null);
+  const useAiRef = useRef(false);
+  const [aiModelName, setAiModelName] = useState<string | null>(null);
+  const [aiActive, setAiActive] = useState(false);
+  const [aiUseState, setAiUseState] = useState(false);
+  const [aiNonce, setAiNonce] = useState(0);
 
   useEffect(() => {
     void (async () => {
@@ -130,13 +138,22 @@ export default function App() {
     }
     setAnalyzing(true);
     const timer = window.setTimeout(() => {
-      void runAnalysis(pixels, rois, profileId, threshold, segmentation, calibration, coloc, stainOverride).then((result) => {
+      const ai = {
+        useAi: useAiRef.current && aiModelRef.current !== null,
+        model:
+          useAiRef.current && aiModelRef.current && lastLoadedModelRef.current !== aiModelRef.current.name
+            ? aiModelRef.current
+            : null,
+      };
+      void runAnalysis(pixels, rois, profileId, threshold, segmentation, calibration, coloc, stainOverride, ai).then((result) => {
+        if (result.aiModelLoaded) lastLoadedModelRef.current = result.aiModelLoaded;
+        setAiActive(result.aiUsed);
         setAnalysis(result);
         setAnalyzing(false);
       });
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [pixels, rois, profileId, threshold, segmentation, calibration, coloc, stainOverride]);
+  }, [pixels, rois, profileId, threshold, segmentation, calibration, coloc, stainOverride, aiNonce]);
 
   const handleFile = useCallback(async (file: File) => {
     setStatus({ kind: 'busy', message: `正在解码 ${file.name}…` });
@@ -241,7 +258,15 @@ export default function App() {
             config.calibration,
             config.coloc,
             config.stainOverride,
+            {
+              useAi: useAiRef.current && aiModelRef.current !== null,
+              model:
+                useAiRef.current && aiModelRef.current && lastLoadedModelRef.current !== aiModelRef.current.name
+                  ? aiModelRef.current
+                  : null,
+            },
           );
+          if (result.aiModelLoaded) lastLoadedModelRef.current = result.aiModelLoaded;
           setProject((prev) => ({
             ...prev,
             samples: [
@@ -437,6 +462,28 @@ export default function App() {
               calibrating={calibrating}
               showOverlay={showOverlay}
               onShowOverlayChange={setShowOverlay}
+            />
+          )}
+          {!isColoc && (
+            <AiPanel
+              modelName={aiModelName}
+              aiActive={aiActive}
+              useAi={aiUseState}
+              onUseAiChange={(value) => {
+                useAiRef.current = value;
+                setAiUseState(value);
+                setAiNonce((n) => n + 1); // 触发重分析
+              }}
+              onModelFile={(file) => {
+                void file.arrayBuffer().then((bytes) => {
+                  aiModelRef.current = { name: file.name, bytes };
+                  lastLoadedModelRef.current = null; // 强制下次请求装载
+                  setAiModelName(file.name);
+                  useAiRef.current = true;
+                  setAiUseState(true);
+                  setAiNonce((n) => n + 1); // 触发重分析
+                });
+              }}
             />
           )}
           <SamplesPanel

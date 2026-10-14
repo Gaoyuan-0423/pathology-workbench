@@ -30,6 +30,7 @@ export function runAnalysis(
   calibration: Calibration,
   coloc: ColocConfig,
   stainOverride: [Vec3, Vec3] | null,
+  ai: { useAi: boolean; model: { name: string; bytes: ArrayBuffer } | null },
 ): Promise<AnalysisResult> {
   const requestId = nextRequestId;
   nextRequestId += 1;
@@ -46,6 +47,7 @@ export function runAnalysis(
     calibration,
     coloc,
     stainOverride,
+    ai,
   };
   ensureWorker().postMessage(request);
   return promise;

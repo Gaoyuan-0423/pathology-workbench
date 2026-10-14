@@ -15,6 +15,8 @@ import {
   meanChannelOverComponent,
   summarizeComponents,
 } from './analysis/segment.ts';
+import { ensureSession, cachedModelName, inferNucleiProb } from './ai/session.ts';
+import { probToMask } from './ai/prepost.ts';
 import { getStainProfile } from './types.ts';
 import type { Vec3 } from './types.ts';
 import type {
@@ -40,6 +42,8 @@ export interface AnalysisRequest {
   coloc: ColocConfig;
   /** 用户自定义染色向量（null = 预设默认） */
   stainOverride: [Vec3, Vec3] | null;
+  /** AI 核分割：useAi 开启且带 model 字节时（按名）装载会话 */
+  ai: { useAi: boolean; model: { name: string; bytes: ArrayBuffer } | null };
 }
 
 interface WorkerScope {
@@ -50,11 +54,11 @@ const workerSelf = self as unknown as WorkerScope & {
   postMessage: (message: AnalysisResult) => void;
 };
 
-workerSelf.onmessage = (event) => {
+workerSelf.onmessage = async (event) => {
   const request = event.data;
   const result = request.profileId === 'if_coloc'
     ? runColocAnalysis(request)
-    : runStainAnalysis(request);
+    : await runStainAnalysis(request);
   workerSelf.postMessage(result);
 };
 
@@ -66,7 +70,7 @@ function estimateTotal(count: number, borderCount: number): number {
 
 // ── 染色预设管线 ──
 
-function runStainAnalysis(request: AnalysisRequest): AnalysisResult {
+async function runStainAnalysis(request: AnalysisRequest): Promise<AnalysisResult> {
   const { requestId, pixels, rois, profileId, threshold, segmentation, calibration } = request;
   const warnings: string[] = [];
   const { width, height } = pixels;
@@ -106,11 +110,32 @@ function runStainAnalysis(request: AnalysisRequest): AnalysisResult {
     thresholdUsed = computeAutoThreshold(histogram256(quantified), threshold.method);
   }
 
-  // 4. 核分割（第一染色通道逐图 Otsu）
-  const nuclearThresholdUsed = computeAutoThreshold(histogram256(nuclearSource), 'otsu');
-  const nuclearMask = new Uint8Array(quantified.length);
-  for (let i = 0; i < nuclearSource.length; i += 1) {
-    nuclearMask[i] = nuclearSource[i] > nuclearThresholdUsed ? 1 : 0;
+  // 4. 核分割：AI 概率图（可选，失败自动回落）或第一染色通道逐图 Otsu
+  let nuclearMask: Uint8Array = new Uint8Array(quantified.length);
+  let nuclearThresholdUsed = -1;
+  let aiUsed = false;
+  let aiModelLoaded: string | null = cachedModelName();
+  if (request.ai?.useAi) {
+    try {
+      if (request.ai.model && cachedModelName() !== request.ai.model.name) {
+        aiModelLoaded = null;
+        await ensureSession(request.ai.model.name, request.ai.model.bytes);
+      }
+      const prob = await inferNucleiProb(nuclearSource, width, height);
+      nuclearMask = probToMask(prob, 0.5);
+      nuclearThresholdUsed = -1; // AI 概率图阈值 0.5，无 OD 阈值语义
+      aiUsed = true;
+      aiModelLoaded = cachedModelName();
+    } catch (error) {
+      warnings.push(`AI 核分割失败，已回落 Otsu：${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  if (!aiUsed) {
+    nuclearThresholdUsed = computeAutoThreshold(histogram256(nuclearSource), 'otsu');
+    nuclearMask = new Uint8Array(quantified.length);
+    for (let i = 0; i < nuclearSource.length; i += 1) {
+      nuclearMask[i] = nuclearSource[i] > nuclearThresholdUsed ? 1 : 0;
+    }
   }
   const allComponents = connectedComponents(nuclearMask, width, height);
   const { kept: nuclei } = gateComponents(allComponents, segmentation);
@@ -219,6 +244,8 @@ function runStainAnalysis(request: AnalysisRequest): AnalysisResult {
     backgroundLevel,
     overlay,
     coloc: null,
+    aiUsed,
+    aiModelLoaded,
     warnings,
   };
 }
@@ -262,6 +289,8 @@ function runColocAnalysis(request: AnalysisRequest): AnalysisResult {
     backgroundLevel: colocResult.backgroundA,
     overlay,
     coloc: colocResult,
+    aiUsed: false,
+    aiModelLoaded: null,
     warnings,
   };
 }

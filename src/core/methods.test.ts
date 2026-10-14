@@ -44,6 +44,8 @@ const result: AnalysisResult = {
   backgroundLevel: 3,
   overlay: null,
   coloc: null,
+  aiUsed: false,
+  aiModelLoaded: null,
   warnings: [],
 };
 
