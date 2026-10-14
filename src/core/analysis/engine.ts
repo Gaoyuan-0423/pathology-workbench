@@ -36,19 +36,7 @@ export interface EngineInput {
   aiMask?: Uint8Array | null;
 }
 
-export interface EngineQc {
-  /** 组织占比：原始 OD > 10 的像素比例 */
-  tissueFraction: number;
-  /** 饱和像素比例（RGB 全 ≥250） */
-  saturatedFraction: number;
-  /** Otsu 分离度 |μfg−μbg|/(σfg+σbg)，<0.35 提示阈值不可靠 */
-  otsuSeparation: number;
-  /** 门控拒绝统计 */
-  rejectedByArea: number;
-  rejectedByCircularity: number;
-  /** 全部核中触边比例（0–1） */
-  borderFraction: number;
-}
+export type EngineQc = import('../types.ts').AnalysisQc;
 
 export interface StainEngineResult {
   overall: RoiMetrics;

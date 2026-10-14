@@ -5,16 +5,11 @@
 import * as XLSX from 'xlsx';
 import type { GroupStatsReport } from './analysis/statistics.ts';
 import { significanceStars } from './stats.ts';
-import type { AnalysisResult, MetricKey, ProjectState, RoiMetrics, SampleRecord } from './types.ts';
+import type { AnalysisResult, ProjectState, RoiMetrics, SampleRecord } from './types.ts';
 import { generateMethodsEn, generateMethodsZh } from './methods.ts';
+import { METRIC_LABELS, type MetricKey } from './api-labels.ts';
 
-export const METRIC_LABELS: Record<MetricKey, string> = {
-  positiveFraction: '阳性面积',
-  labelingIndex: '标注指数',
-  integratedOpticalDensity: 'IOD',
-  meanOpticalDensity: '平均 OD',
-  densityPerMm2: '密度 (个/mm²)',
-};
+export { METRIC_LABELS };
 
 export function metricValue(metrics: RoiMetrics, key: MetricKey): number | null {
   switch (key) {

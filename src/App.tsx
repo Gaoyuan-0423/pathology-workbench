@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { get, set } from 'idb-keyval';
 import { runAnalysis } from './core/analysis-client.ts';
+import { compareGroups } from './core/analysis/statistics.ts';
+import { evaluateDiagnostics } from './core/advisor.ts';
+import { generateMethodsEn, generateMethodsZh } from './core/methods.ts';
+import { groupsFromSamples } from './core/api.ts';
 import { controlThresholdFromChannel } from './core/analysis/calibrate.ts';
 import { histogram256, percentileFromHist } from './core/analysis/threshold.ts';
 import { extractDabChannel } from './core/image/color.ts';
@@ -16,11 +20,13 @@ import {
   type ColocConfig,
   type ProjectState,
   type Roi,
+  type MetricKey,
   type SegmentationConfig,
   type StainProfileId,
   type ThresholdConfig,
   type Vec3 as StainVec,
 } from './core/types.ts';
+import AdvisorPanel from './ui/AdvisorPanel.tsx';
 import BatchPanel, { type BatchState } from './ui/BatchPanel.tsx';
 import AiPanel from './ui/AiPanel.tsx';
 import CanvasView from './ui/CanvasView.tsx';
@@ -98,6 +104,7 @@ export default function App() {
   const [aiActive, setAiActive] = useState(false);
   const [aiUseState, setAiUseState] = useState(false);
   const [aiNonce, setAiNonce] = useState(0);
+  const [statsMetric, setStatsMetric] = useState<MetricKey>('positiveFraction');
 
   useEffect(() => {
     void (async () => {
@@ -367,6 +374,43 @@ export default function App() {
 
   const hasImage = Boolean(project.pixels);
   const isColoc = project.profileId === 'if_coloc';
+
+  // 程序化 API：控制台/脚本可调用（只读 + 报告导出）
+  const reportRef = useRef<{ json: () => unknown } | null>(null);
+  reportRef.current = {
+    json: () => {
+      const groups = groupsFromSamples({ samples: project.samples, metric: statsMetric });
+      const stats = groups.length >= 2 ? compareGroups(groups) : null;
+      const diagnostics = evaluateDiagnostics({ project, result: analysis, qc: analysis?.qc ?? null, statsReport: stats });
+      return {
+        generatedAt: new Date().toISOString(),
+        image: project.image,
+        profile: project.profileId,
+        metrics: analysis?.overall ?? null,
+        samples: project.samples,
+        statistics: stats,
+        diagnostics,
+        methods: { zh: generateMethodsZh(project, analysis), en: generateMethodsEn(project, analysis) },
+      };
+    },
+  };
+  useEffect(() => {
+    (window as unknown as Record<string, unknown>).__pathologyAPI = {
+      version: '0.1.0',
+      getReportJson: () => reportRef.current?.json() ?? null,
+      exportReportJson: () => {
+        const data = reportRef.current?.json();
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = `pathology-report-${new Date().toISOString().slice(0, 10)}.json`;
+        anchor.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+        return data;
+      },
+    };
+  }, []);
   return (
     <div className="app">
       <header className="app-header">
@@ -488,6 +532,7 @@ export default function App() {
           )}
           <SamplesPanel
             project={project}
+            statsMetric={statsMetric}
             canAddSample={Boolean(analysis) && !isColoc}
             disabled={analyzing}
             onAddSample={addSample}
@@ -497,6 +542,13 @@ export default function App() {
             }
             onStatus={(message, kind) => setStatus({ kind, message })}
             analysisResult={analysis}
+            onStatsMetricChange={setStatsMetric}
+          />
+          <AdvisorPanel
+            project={project}
+            analysis={analysis}
+            statsMetric={statsMetric}
+            onStatus={(message, kind) => setStatus({ kind, message })}
           />
           <ResultsPanel result={analysis} running={analyzing} hasImage={hasImage} />
         </aside>

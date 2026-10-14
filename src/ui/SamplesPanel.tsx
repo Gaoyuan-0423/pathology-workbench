@@ -15,6 +15,8 @@ import type { AnalysisResult, MetricKey, ProjectState, SampleRecord } from '../c
 
 interface SamplesPanelProps {
   project: ProjectState;
+  /** 与诊断面板共享的比较指标 */
+  statsMetric: MetricKey;
   canAddSample: boolean;
   disabled: boolean;
   onAddSample: (group: string) => void;
@@ -22,6 +24,7 @@ interface SamplesPanelProps {
   onDeleteSample: (id: string) => void;
   onStatus: (message: string, kind: 'ok' | 'error') => void;
   analysisResult: AnalysisResult | null;
+  onStatsMetricChange: (metric: MetricKey) => void;
 }
 
 const METRIC_OPTIONS: MetricKey[] = [
@@ -34,16 +37,18 @@ const METRIC_OPTIONS: MetricKey[] = [
 
 export default function SamplesPanel({
   project,
+  statsMetric: externalMetric,
   canAddSample,
   disabled,
   onAddSample,
   onUpdateSample,
   onDeleteSample,
   onStatus,
+  onStatsMetricChange,
   analysisResult,
 }: SamplesPanelProps) {
   const [group, setGroup] = useState('对照组');
-  const [metric, setMetric] = useState<MetricKey>('positiveFraction');
+  const [metric, setMetric] = useState<MetricKey>(externalMetric);
 
   const groups = useMemo(() => {
     const byGroup = new Map<string, number[]>();
@@ -120,7 +125,13 @@ export default function SamplesPanel({
       {project.samples.length >= 2 && (
         <div className="field-row">
           <label>比较指标</label>
-          <select value={metric} onChange={(event) => setMetric(event.target.value as MetricKey)}>
+          <select
+            value={metric}
+            onChange={(event) => {
+              setMetric(event.target.value as MetricKey);
+              onStatsMetricChange(event.target.value as MetricKey);
+            }}
+          >
             {METRIC_OPTIONS.map((key) => (
               <option key={key} value={key}>{METRIC_LABELS[key]}</option>
             ))}

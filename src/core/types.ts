@@ -185,6 +185,20 @@ export interface ProjectState {
   samples: SampleRecord[];
 }
 
+/** 引擎随分析产出的质检指标（诊断顾问消费） */
+export interface AnalysisQc {
+  /** 组织占比：原始 OD > 10 的像素比例 */
+  tissueFraction: number;
+  /** 饱和像素比例（RGB 全 ≥250） */
+  saturatedFraction: number;
+  /** Otsu 分离度，<0.35 提示阈值不可靠 */
+  otsuSeparation: number;
+  rejectedByArea: number;
+  rejectedByCircularity: number;
+  /** 全部核中触边比例（0–1） */
+  borderFraction: number;
+}
+
 /** Worker 一次分析的产出 */
 export interface AnalysisResult {
   requestId: number;
@@ -200,6 +214,8 @@ export interface AnalysisResult {
   overlay: ImageData | null;
   /** 仅 if_coloc 模式非空 */
   coloc: ColocResult | null;
+  /** 质检指标（染色预设分析；IF 模式为 null） */
+  qc: AnalysisQc | null;
   /** 本次核分割是否使用了 AI 概率图 */
   aiUsed: boolean;
   /** Worker 当前装载的 AI 模型名（供客户端判断是否需要重传字节） */
