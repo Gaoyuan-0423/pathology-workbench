@@ -39,6 +39,13 @@ import SamplesPanel from './ui/SamplesPanel.tsx';
 import UploadPanel from './ui/UploadPanel.tsx';
 
 const STORAGE_KEY = 'pathology-workbench:project:v1';
+const suiteHost = window.location.hostname.toLowerCase();
+const isWispLab = suiteHost === 'wisplab.top' || suiteHost.endsWith('.wisplab.top');
+const suiteLinks = {
+  wb: isWispLab ? 'https://wb.wisplab.top/' : 'https://gaoyuan-0423.github.io/blot-workbench/',
+  pathology: isWispLab ? 'https://pathology.wisplab.top/' : './',
+  pcr: isWispLab ? 'https://pcr.wisplab.top/' : 'https://gaoyuan-0423.github.io/pcr-workbench/',
+};
 
 type Status = { kind: 'idle' | 'busy' | 'error' | 'ok'; message: string };
 type DrawMode = 'none' | 'roi' | 'line';
@@ -419,9 +426,10 @@ export default function App() {
           <span><h1>病理工作台</h1><span className="app-subtitle">Pathology Workbench</span></span>
         </a>
         <nav className="suite-nav" aria-label="科研工作台导航">
-          <a href="https://gaoyuan-0423.github.io/blot-workbench/">WB <span>条带分析</span></a>
-          <a href="./" aria-current="page">病理 <span>图像定量</span></a>
-          <a href="https://gaoyuan-0423.github.io/pcr-workbench/">PCR <span>表达分析</span></a>
+          {isWispLab && <a href="https://wisplab.top/">总首页</a>}
+          <a href={suiteLinks.wb}>WB <span>条带分析</span></a>
+          <a href={suiteLinks.pathology} aria-current="page">病理 <span>图像定量</span></a>
+          <a href={suiteLinks.pcr}>PCR <span>表达分析</span></a>
         </nav>
         <div className="header-meta">
           <span className="local-badge"><span aria-hidden="true"/>本地处理 · 图像不上传</span>
