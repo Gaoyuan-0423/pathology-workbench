@@ -1,3 +1,4 @@
+import { t } from '../i18n.ts';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Roi } from '../core/types.ts';
 
@@ -223,7 +224,7 @@ export default function CanvasView({
   return (
     <div className="canvas-wrap" ref={containerRef}>
       <div className="canvas-toolbar">
-        <button type="button" onClick={fit} disabled={!pixels}>适配窗口</button>
+        <button type="button" onClick={fit} disabled={!pixels}>{t("适配窗口")}</button>
         <button
           type="button"
           onClick={() => setView((prev) => ({ ...prev, scale: 1 }))}
@@ -246,7 +247,7 @@ export default function CanvasView({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
       />
-      {!pixels && <div className="canvas-empty"><div className="canvas-empty-content"><span className="empty-image-icon" aria-hidden="true"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="8" y="8" width="32" height="32" rx="5"/><circle cx="19" cy="19" r="3"/><path d="m9 32 10-9 8 7 6-5 7 7" strokeLinecap="round" strokeLinejoin="round"/></svg></span><h2>在这里观察每一处细节</h2><p>导入图像后，可框选 ROI、标定比例尺并核对分割结果。</p><span className="empty-image-note">分析结果会显示在图像下方</span></div></div>}
+      {!pixels && <div className="canvas-empty"><div className="canvas-empty-content"><span className="empty-image-icon" aria-hidden="true"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="8" y="8" width="32" height="32" rx="5"/><circle cx="19" cy="19" r="3"/><path d="m9 32 10-9 8 7 6-5 7 7" strokeLinecap="round" strokeLinejoin="round"/></svg></span><h2>{t("在这里观察每一处细节")}</h2><p>{t("导入图像后，可框选 ROI、标定比例尺并核对分割结果。")}</p><span className="empty-image-note">{t("分析结果会显示在图像下方")}</span></div></div>}
     </div>
   );
 }

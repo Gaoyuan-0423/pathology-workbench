@@ -1,3 +1,4 @@
+import { t } from '../i18n.ts';
 import { useId } from 'react';
 import type { ColocConfig } from '../core/types.ts';
 
@@ -20,11 +21,11 @@ export default function ColocPanel({
 }: ColocPanelProps) {
   const formId = useId();
   return (
-    <section className="panel" aria-label="共定位参数">
-      <h3>共定位参数</h3>
-      <p className="panel-note">从 RGB 图像中选择两个颜色通道进行共定位分析。</p>
+    <section className="panel" aria-label={t("共定位参数")}>
+      <h3>{t("共定位参数")}</h3>
+      <p className="panel-note">{t("从 RGB 图像中选择两个颜色通道进行共定位分析。")}</p>
       <div className="field-row">
-        <label htmlFor={`${formId}-channel-a`}>通道 A</label>
+        <label htmlFor={`${formId}-channel-a`}>{t("通道 A")}</label>
         <select
           id={`${formId}-channel-a`}
           value={coloc.channelA}
@@ -32,12 +33,12 @@ export default function ColocPanel({
           onChange={(event) => onChange({ channelA: Number(event.target.value) as 0 | 1 | 2 })}
         >
           {([0, 1, 2] as const).map((channel) => (
-            <option key={channel} value={channel}>{CHANNEL_LABELS[channel]}</option>
+            <option key={channel} value={channel}>{t(CHANNEL_LABELS[channel])}</option>
           ))}
         </select>
       </div>
       <div className="field-row">
-        <label htmlFor={`${formId}-channel-b`}>通道 B</label>
+        <label htmlFor={`${formId}-channel-b`}>{t("通道 B")}</label>
         <select
           id={`${formId}-channel-b`}
           value={coloc.channelB}
@@ -45,18 +46,18 @@ export default function ColocPanel({
           onChange={(event) => onChange({ channelB: Number(event.target.value) as 0 | 1 | 2 })}
         >
           {([0, 1, 2] as const).map((channel) => (
-            <option key={channel} value={channel}>{CHANNEL_LABELS[channel]}</option>
+            <option key={channel} value={channel}>{t(CHANNEL_LABELS[channel])}</option>
           ))}
         </select>
       </div>
 
       <div className="field-row">
-        <span id={`${formId}-threshold-mode`} className="field-label">阈值模式</span>
+        <span id={`${formId}-threshold-mode`} className="field-label">{t("阈值模式")}</span>
         <div className="segmented" role="group" aria-labelledby={`${formId}-threshold-mode`}>
           {(
             [
-              ['auto', '逐图 Otsu'],
-              ['manual', '手动'],
+              ['auto', t('逐图 Otsu')],
+              ['manual', t('手动')],
             ] as const
           ).map(([mode, label]) => (
             <button
@@ -67,7 +68,7 @@ export default function ColocPanel({
               className={coloc.thresholdMode === mode ? 'segment-active' : ''}
               onClick={() => onChange({ thresholdMode: mode })}
             >
-              {label}
+              {t(label)}
             </button>
           ))}
         </div>
@@ -76,7 +77,7 @@ export default function ColocPanel({
       {coloc.thresholdMode === 'manual' && (
         <>
           <div className="field-row">
-            <label htmlFor={`${formId}-threshold-a`}>通道 A 阈值</label>
+            <label htmlFor={`${formId}-threshold-a`}>{t("通道 A 阈值")}</label>
             <input
               id={`${formId}-threshold-a`}
               type="range"
@@ -89,7 +90,7 @@ export default function ColocPanel({
             <span className="field-value">{coloc.manualA}</span>
           </div>
           <div className="field-row">
-            <label htmlFor={`${formId}-threshold-b`}>通道 B 阈值</label>
+            <label htmlFor={`${formId}-threshold-b`}>{t("通道 B 阈值")}</label>
             <input
               id={`${formId}-threshold-b`}
               type="range"
@@ -105,7 +106,7 @@ export default function ColocPanel({
       )}
 
       <div className="field-row">
-        <label htmlFor={`${formId}-background`}>背景百分位</label>
+        <label htmlFor={`${formId}-background`}>{t("背景百分位")}</label>
         <input
           id={`${formId}-background`}
           type="number"
@@ -122,9 +123,7 @@ export default function ColocPanel({
       </div>
 
       <p className="panel-note">
-        逐通道扣除背景百分位后，主指标为掩膜 Pearson（任一通道超阈的像素集合）；
-        Manders M1 = A 在 B 阳性区强度占比，M2 对称。全像素 Pearson 一并列出作参考。
-      </p>
+        {t("逐通道扣除背景百分位后，主指标为掩膜 Pearson（任一通道超阈的像素集合）； Manders M1 = A 在 B 阳性区强度占比，M2 对称。全像素 Pearson 一并列出作参考。")}</p>
 
       <label className="check-row">
         <input
@@ -132,8 +131,7 @@ export default function ColocPanel({
           checked={showOverlay}
           onChange={(event) => onShowOverlayChange(event.target.checked)}
         />
-        显示通道掩膜叠加（A 品红 / B 绿 / 重叠白）
-      </label>
+        {t("显示通道掩膜叠加（A 品红 / B 绿 / 重叠白）")}</label>
     </section>
   );
 }

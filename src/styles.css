@@ -635,3 +635,30 @@ button.button-danger:hover { background: #fee2e2; }
   .result-table { font-size: 12px; }
   .analysis-results .panel { padding: 14px; }
 }
+
+/* Language changes only presentation; long English labels may wrap. */
+.language-switch { display: inline-flex; gap: 3px; padding: 3px; background: var(--bg); border: 1px solid var(--border); border-radius: 9px; }
+.language-switch button { min-height: 28px; padding: 3px 9px; font-size: 12px; border-color: transparent; background: transparent; }
+.language-switch button[aria-pressed='true'] { color: var(--accent); background: var(--panel); border-color: var(--border); font-weight: 650; }
+html[lang='en'] .scene-option-copy strong { overflow-wrap: anywhere; }
+html[lang='en'] .field-row { flex-wrap: wrap; }
+html[lang='en'] .field-row > label:first-child,
+html[lang='en'] .field-row > .field-label:first-child { max-width: 100%; }
+html[lang='en'] .segmented { flex-wrap: wrap; }
+html[lang='en'] .result-table th { white-space: normal; }
+html[lang='en'] .local-badge { white-space: normal; }
+@media (max-width: 760px) {
+  html[lang='en'] .app-brand { flex-shrink: 1; min-width: 0; }
+  html[lang='en'] .app-header h1 { font-size: 17px; }
+  html[lang='en'] .header-meta { width: 100%; max-width: none; }
+  html[lang='en'] .scene-option-copy strong { font-size: 11px; }
+  html[lang='en'] .workspace-heading { align-items: flex-start; flex-wrap: wrap; }
+  html[lang='en'] .profile-badge { white-space: normal; }
+}
+
+.scene-compact-label { display: none; }
+@media (max-width: 540px) {
+  html[lang='en'] .scene-long-label { display: none; }
+  html[lang='en'] .scene-compact-label { display: inline; }
+  html[lang='en'] .scene-option-copy strong { font-size: 12px; }
+}

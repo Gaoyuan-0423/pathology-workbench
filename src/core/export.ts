@@ -1,3 +1,4 @@
+import { t } from '../i18n.ts';
 /**
  * 导出：Excel（多工作表）/ CSV / 图表 SVG·PNG / 叠加层 PNG / Methods 文本。
  * Excel 走 SheetJS；CSV 手写 RFC 4180 + UTF-8 BOM（与 pcr-workbench 同款）。
@@ -43,7 +44,7 @@ export function buildWorkbook(
   const book = XLSX.utils.book_new();
 
   const metricsAoa: (string | number | null)[][] = [
-    ['样本', '分组', '图像', '阳性面积', '阳性核', '总核', '标注指数', '触边核', '折算总数', 'IOD', '平均OD', '密度(个/mm²)'],
+    [t('样本'), t('分组'), t('图像'), t('阳性面积'), t('阳性核'), t('总核'), t('标注指数'), t('触边核'), t('折算总数'), 'IOD', t('平均OD'), t('密度(个/mm²)')],
     ...samples.map((sample) => [
       sample.name,
       sample.group,
@@ -59,14 +60,14 @@ export function buildWorkbook(
       sample.metrics.densityPerMm2 === null ? null : round4(sample.metrics.densityPerMm2),
     ]),
   ];
-  XLSX.utils.book_append_sheet(book, aoaToSheet(metricsAoa), '样本指标');
+  XLSX.utils.book_append_sheet(book, aoaToSheet(metricsAoa), t('样本指标'));
 
   if (report) {
     const statsAoa: (string | number | null)[][] = [
-      ['检验', '统计量', 'df1', 'df2', 'p', '校正p', '显著性'],
+      [t('检验'), t('统计量'), 'df1', 'df2', 'p', t('校正p'), t('显著性')],
       ...(report.omnibusParametric
         ? [[
-            report.omnibusParametric.label,
+            t(report.omnibusParametric.label),
             round4(report.omnibusParametric.statistic),
             report.omnibusParametric.df1 ?? '',
             report.omnibusParametric.df2 === null ? '' : round4(report.omnibusParametric.df2),
@@ -77,7 +78,7 @@ export function buildWorkbook(
         : []),
       ...(report.omnibusNonParametric
         ? [[
-            report.omnibusNonParametric.label,
+            t(report.omnibusNonParametric.label),
             round4(report.omnibusNonParametric.statistic),
             report.omnibusNonParametric.df1 ?? '',
             '',
@@ -96,7 +97,7 @@ export function buildWorkbook(
         significanceStars(row.adjustedP),
       ]),
       [],
-      ['分组', 'n', '均值', '标准差', '中位数'],
+      [t('分组'), 'n', t('均值'), t('标准差'), t('中位数')],
       ...report.groupNames.map((name, index) => [
         name,
         report.ns[index],
@@ -105,38 +106,38 @@ export function buildWorkbook(
         round4(report.medians[index]),
       ]),
       [],
-      ['正态性 (D\'Agostino–Pearson)', 'p'],
-      ...report.normality.map((item) => [item.group, item.p === null ? 'n<8 未检验' : round4(item.p)]),
-      ['方差齐性 (Brown–Forsythe)', round4(report.leveneP)],
+      [t('正态性 (D\'Agostino–Pearson)'), 'p'],
+      ...report.normality.map((item) => [item.group, item.p === null ? t('n<8 未检验') : round4(item.p)]),
+      [t('方差齐性 (Brown–Forsythe)'), round4(report.leveneP)],
       [],
-      ['建议', report.recommendation],
+      [t('建议'), t(report.recommendation)],
     ];
-    XLSX.utils.book_append_sheet(book, aoaToSheet(statsAoa), '统计检验');
+    XLSX.utils.book_append_sheet(book, aoaToSheet(statsAoa), t('统计检验'));
   }
 
   XLSX.utils.book_append_sheet(
     book,
-    aoaToSheet([['Methods（中文）'], [generateMethodsZh(project, result)], [], ['Methods (English)'], [generateMethodsEn(project, result)]]),
+    aoaToSheet([[t('Methods（中文）')], [generateMethodsZh(project, result)], [], ['Methods (English)'], [generateMethodsEn(project, result)]]),
     'Methods',
   );
 
   XLSX.utils.book_append_sheet(
     book,
     aoaToSheet([
-      ['项目', '值'],
-      ['软件', 'Pathology Workbench v0.1'],
-      ['导出时间', new Date().toISOString()],
-      ['染色预设', project.profileId],
-      ['阈值模式', project.threshold.mode],
-      ['自动方法', project.threshold.method],
-      ['背景百分位', project.threshold.backgroundPercentile],
-      ['对照片', project.threshold.controlImageName ?? '未标定'],
-      ['核面积门控 (px)', `${project.segmentation.minAreaPx}–${project.segmentation.maxAreaPx}`],
-      ['最小圆度', project.segmentation.minCircularity],
-      ['μm/px', project.calibration.mpp ?? '未标定'],
-      ['样本数', samples.length],
+      [t('项目'), t('值')],
+      [t('软件'), 'Pathology Workbench v0.1'],
+      [t('导出时间'), new Date().toISOString()],
+      [t('染色预设'), project.profileId],
+      [t('阈值模式'), project.threshold.mode],
+      [t('自动方法'), project.threshold.method],
+      [t('背景百分位'), project.threshold.backgroundPercentile],
+      [t('对照片'), project.threshold.controlImageName ?? t('未标定')],
+      [t('核面积门控 (px)'), `${project.segmentation.minAreaPx}–${project.segmentation.maxAreaPx}`],
+      [t('最小圆度'), project.segmentation.minCircularity],
+      ['μm/px', project.calibration.mpp ?? t('未标定')],
+      [t('样本数'), samples.length],
     ]),
-    '项目信息',
+    t('项目信息'),
   );
   return book;
 }
@@ -165,7 +166,7 @@ function csvEscape(value: string): string {
 }
 
 export function metricsCsv(samples: SampleRecord[]): string {
-  const header = '样本,分组,图像,阳性面积,阳性核,总核,标注指数,IOD,平均OD';
+  const header = t('样本,分组,图像,阳性面积,阳性核,总核,标注指数,IOD,平均OD');
   const rows = samples.map((sample) =>
     [
       sample.name,

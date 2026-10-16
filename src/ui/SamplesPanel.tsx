@@ -1,3 +1,4 @@
+import { t, useLanguage } from '../i18n.ts';
 import { useMemo, useState } from 'react';
 import { compareGroups } from '../core/analysis/statistics.ts';
 import { groupBarChartSvg } from '../core/chart.ts';
@@ -47,7 +48,9 @@ export default function SamplesPanel({
   onStatsMetricChange,
   analysisResult,
 }: SamplesPanelProps) {
-  const [group, setGroup] = useState('对照组');
+  const language = useLanguage();
+  const [groupValue, setGroup] = useState<string | null>(null);
+  const group = groupValue ?? t('对照组');
   const [metric, setMetric] = useState<MetricKey>(externalMetric);
 
   const groups = useMemo(() => {
@@ -72,23 +75,23 @@ export default function SamplesPanel({
     if (!report) return null;
     try {
       return groupBarChartSvg(report, {
-        yLabel: METRIC_LABELS[metric],
-        title: `${METRIC_LABELS[metric]} 组间比较`,
+        yLabel: t(METRIC_LABELS[metric], language),
+        title: t(`${t(METRIC_LABELS[metric], language)} 组间比较`, language),
       });
     } catch {
       return null;
     }
-  }, [report, metric]);
+  }, [report, metric, language]);
 
   return (
     <section className="panel">
-      <h3>样本库与组间统计</h3>
+      <h3>{t("样本库与组间统计")}</h3>
       <div className="field-row">
         <input
           type="text"
           value={group}
           onChange={(event) => setGroup(event.target.value)}
-          placeholder="分组名"
+          placeholder={t("分组名")}
           disabled={disabled}
         />
         <button
@@ -96,12 +99,10 @@ export default function SamplesPanel({
           disabled={!canAddSample || disabled || group.trim() === ''}
           onClick={() => onAddSample(group.trim())}
         >
-          加入样本
-        </button>
+          {t("加入样本")}</button>
       </div>
       <p className="panel-note">
-        每导入一张图并完成分析后加入样本库（只保存指标，不保存像素）；比较不同处理组的图像请分别加入并标注分组。
-      </p>
+        {t("每导入一张图并完成分析后加入样本库（只保存指标，不保存像素）；比较不同处理组的图像请分别加入并标注分组。")}</p>
 
       {project.samples.length > 0 && (
         <ul className="roi-list">
@@ -111,12 +112,11 @@ export default function SamplesPanel({
                 className="sample-name"
                 value={sample.group}
                 onChange={(event) => onUpdateSample(sample.id, { group: event.target.value })}
-                aria-label="分组"
+                aria-label={t("分组")}
               />
               <span className="roi-size" title={sample.imageName}>{sample.name}</span>
               <button type="button" className="link-button" onClick={() => onDeleteSample(sample.id)}>
-                删除
-              </button>
+                {t("删除")}</button>
             </li>
           ))}
         </ul>
@@ -124,7 +124,7 @@ export default function SamplesPanel({
 
       {project.samples.length >= 2 && (
         <div className="field-row">
-          <label>比较指标</label>
+          <label>{t("比较指标")}</label>
           <select
             value={metric}
             onChange={(event) => {
@@ -133,7 +133,7 @@ export default function SamplesPanel({
             }}
           >
             {METRIC_OPTIONS.map((key) => (
-              <option key={key} value={key}>{METRIC_LABELS[key]}</option>
+              <option key={key} value={key}>{t(METRIC_LABELS[key])}</option>
             ))}
           </select>
         </div>
@@ -146,16 +146,16 @@ export default function SamplesPanel({
           <table className="result-table">
             <thead>
               <tr>
-                <th>检验</th>
-                <th>统计量</th>
-                <th>p / 校正 p</th>
-                <th>显著性</th>
+                <th>{t("检验")}</th>
+                <th>{t("统计量")}</th>
+                <th>{t("p / 校正 p")}</th>
+                <th>{t("显著性")}</th>
               </tr>
             </thead>
             <tbody>
               {report.omnibusParametric && (
                 <tr>
-                  <td>{report.omnibusParametric.label}</td>
+                  <td>{t(report.omnibusParametric.label)}</td>
                   <td>{formatNumber(report.omnibusParametric.statistic)}</td>
                   <td>{formatP(report.omnibusParametric.p)}</td>
                   <td>{significanceStars(report.omnibusParametric.p)}</td>
@@ -163,7 +163,7 @@ export default function SamplesPanel({
               )}
               {report.omnibusNonParametric && (
                 <tr>
-                  <td>{report.omnibusNonParametric.label}</td>
+                  <td>{t(report.omnibusNonParametric.label)}</td>
                   <td>{formatNumber(report.omnibusNonParametric.statistic)}</td>
                   <td>{formatP(report.omnibusNonParametric.p)}</td>
                   <td>{significanceStars(report.omnibusNonParametric.p)}</td>
@@ -181,13 +181,12 @@ export default function SamplesPanel({
               ))}
             </tbody>
           </table>
-              <p className="panel-note">{report.recommendation}</p>
+              <p className="panel-note">{t(report.recommendation)}</p>
             </>
           )}
           {analysisResult && !report && (
             <p className="panel-note">
-              当前整图结果可导出（阈值 {analysisResult.thresholdUsed} · 核阈值 {analysisResult.nuclearThresholdUsed}）；加入 ≥2 组样本后可做组间统计。
-            </p>
+              {t("当前整图结果可导出（阈值 ")}{analysisResult.thresholdUsed} {t("· 核阈值 ")}{analysisResult.nuclearThresholdUsed}{t("）；加入 ≥2 组样本后可做组间统计。")}</p>
           )}
           {chartSvg && (
             <div
@@ -204,8 +203,7 @@ export default function SamplesPanel({
                 onStatus('已导出 Excel（指标/统计/Methods/项目信息）', 'ok');
               }}
             >
-              导出 Excel
-            </button>
+              {t("导出 Excel")}</button>
             <button
               type="button"
               onClick={() => {
@@ -213,16 +211,14 @@ export default function SamplesPanel({
                 onStatus('已导出 CSV', 'ok');
               }}
             >
-              导出 CSV
-            </button>
+              {t("导出 CSV")}</button>
             {chartSvg && (
               <>
                 <button
                   type="button"
                   onClick={() => downloadText(chartSvg, `pathology-chart-${dateStamp()}.svg`, 'image/svg+xml')}
                 >
-                  图表 SVG
-                </button>
+                  {t("图表 SVG")}</button>
                 <button
                   type="button"
                   onClick={() => {
@@ -232,8 +228,7 @@ export default function SamplesPanel({
                     });
                   }}
                 >
-                  图表 PNG
-                </button>
+                  {t("图表 PNG")}</button>
               </>
             )}
             <button
@@ -251,8 +246,7 @@ export default function SamplesPanel({
                 })();
               }}
             >
-              复制 Methods
-            </button>
+              {t("复制 Methods")}</button>
           </div>
         </div>
       )}

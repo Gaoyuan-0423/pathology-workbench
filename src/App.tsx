@@ -1,3 +1,4 @@
+import { tError, t, useLanguage, setLanguage, withLanguage } from './i18n.ts';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { get, set } from 'idb-keyval';
 import { runAnalysis } from './core/analysis-client.ts';
@@ -66,10 +67,9 @@ function LineCalibration({
   const valid = Number.isFinite(value) && value > 0;
   return (
     <section className="panel">
-      <h3>比例尺标定</h3>
+      <h3>{t("比例尺标定")}</h3>
       <p className="panel-note">
-        线段长度 {lengthPx.toFixed(1)} px。输入该线段对应的真实长度：
-      </p>
+        {t("线段长度 ")}{lengthPx.toFixed(1)} {t("px。输入该线段对应的真实长度：")}</p>
       <div className="field-row">
         <input
           type="number"
@@ -87,15 +87,15 @@ function LineCalibration({
             onCancel();
           }}
         >
-          应用
-        </button>
-        <button type="button" onClick={onCancel}>取消</button>
+          {t("应用")}</button>
+        <button type="button" onClick={onCancel}>{t("取消")}</button>
       </div>
     </section>
   );
 }
 
 export default function App() {
+  const language = useLanguage();
   const [project, setProject] = useState<ProjectState>(createEmptyProject);
   const [loaded, setLoaded] = useState(false);
   const [status, setStatus] = useState<Status>({ kind: 'idle', message: '' });
@@ -445,30 +445,34 @@ export default function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <a className="app-brand" href="./" aria-label="Pathology Workbench 病理工作台">
+        <a className="app-brand" href={withLanguage("./")} aria-label={t("Pathology Workbench 病理工作台")}>
           <span className="brand-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="m8 3 6 6-4 4-6-6zM7 10l-2 2m7-1 2 2M9 19h10M5 21h16M14 5a8 8 0 0 1 4 14M7 16h5" strokeLinecap="round" strokeLinejoin="round"/></svg></span>
-          <span><h1>病理工作台</h1><span className="app-subtitle">Pathology Workbench</span></span>
+          <span><h1>{t("病理工作台")}</h1><span className="app-subtitle">Pathology Workbench</span></span>
         </a>
-        <nav className="suite-nav" aria-label="科研工作台导航">
-          {isWispLab && <a href="https://wisplab.top/">总首页</a>}
-          <a href={suiteLinks.wb}>WB <span>条带分析</span></a>
-          <a href={suiteLinks.pathology} aria-current="page">病理 <span>图像定量</span></a>
-          <a href={suiteLinks.pcr}>PCR <span>表达分析</span></a>
+        <nav className="suite-nav" aria-label={t("科研工作台导航")}>
+          {isWispLab && <a href={withLanguage("https://wisplab.top/")}>{t("总首页")}</a>}
+          <a href={withLanguage(suiteLinks.wb)}>WB <span>{t("条带分析")}</span></a>
+          <a href={withLanguage(suiteLinks.pathology)} aria-current="page">{t("病理 ")}<span>{t("图像定量")}</span></a>
+          <a href={withLanguage(suiteLinks.pcr)}>PCR <span>{t("表达分析")}</span></a>
         </nav>
         <div className="header-meta">
-          <span className="local-badge"><span aria-hidden="true"/>本地处理 · 图像不上传</span>
+          <div className="language-switch" role="group" aria-label={language === 'en' ? 'Language' : '语言'}>
+            <button type="button" lang="zh-CN" aria-pressed={language === 'zh'} onClick={() => setLanguage('zh')}>中文</button>
+            <button type="button" lang="en" aria-pressed={language === 'en'} onClick={() => setLanguage('en')}>EN</button>
+          </div>
+          <span className="local-badge"><span aria-hidden="true"/>{t("本地处理 · 图像不上传")}</span>
           {status.message && (
-            <span className={`status status-${status.kind}`} role="status">{status.message}</span>
+            <span className={`status status-${status.kind}`} role="status">{tError(status.message)}</span>
           )}
         </div>
       </header>
       <SceneSelector scene={scene} disabled={switchingDisabled} onChange={selectScene} />
       <main className="app-main">
         <div className="canvas-column">
-          <div className="workspace-heading"><div><p className="section-eyebrow">IMAGE WORKSPACE</p><h2>图像与定量结果</h2></div><span className="profile-badge">{getStainProfile(project.profileId).label}</span></div>
+          <div className="workspace-heading"><div><p className="section-eyebrow">{t("图像工作区")}</p><h2>{t("图像与定量结果")}</h2></div><span className="profile-badge">{t(getStainProfile(project.profileId).label)}</span></div>
           <UploadPanel
             busy={status.kind === 'busy'}
-            prompt={isColoc ? '拖入 RGB 荧光图像，开始共定位分析' : `拖入 ${scene === 'ihc' ? 'H-DAB' : project.profileId === 'masson' ? 'Masson' : 'H&E'} 图像，开始分析`}
+            prompt={isColoc ? t('拖入 RGB 荧光图像，开始共定位分析') : t(`拖入 ${scene === 'ihc' ? 'H-DAB' : project.profileId === 'masson' ? 'Masson' : 'H&E'} 图像，开始分析`)}
             onFile={(file) => void handleFile(file)}
           />
           <CanvasView
@@ -480,29 +484,29 @@ export default function App() {
             onRoiDrawn={handleRoiDrawn}
             onLineDrawn={setPendingLinePx}
           />
-          <div className="workspace-caption"><span>{project.image ? project.image.name : '支持病理染色、免疫组化与免疫荧光图像'}</span><span>滚轮缩放 · 拖动平移</span></div>
+          <div className="workspace-caption"><span>{project.image ? project.image.name : t('支持病理染色、免疫组化与免疫荧光图像')}</span><span>{t("滚轮缩放 · 拖动平移")}</span></div>
           <div className="analysis-results"><ResultsPanel result={analysis} running={analyzing} hasImage={hasImage} /></div>
         </div>
         <aside className="side-panel">
-          <div className="settings-heading"><div><p className="section-eyebrow">ANALYSIS SETTINGS</p><h2>分析设置</h2></div><span>调整后自动计算</span></div>
+          <div className="settings-heading"><div><p className="section-eyebrow">{t("分析设置")}</p><h2>{t("分析设置")}</h2></div><span>{t("调整后自动计算")}</span></div>
           <section className="panel">
-            <h3>{isColoc ? '分析任务' : '染色预设'}</h3>
+            <h3>{isColoc ? t('分析任务') : t('染色预设')}</h3>
             {scene === 'stain' ? <div className="profile-grid">
               {STAIN_PROFILES.filter((profile) => sceneForProfile(profile.id) === 'stain').map((profile) => (
                 <button
                   key={profile.id}
                   type="button"
-                  title={profile.description}
+                  title={t(profile.description)}
                   className={project.profileId === profile.id ? 'profile-active' : ''}
                   aria-pressed={project.profileId === profile.id}
                   disabled={switchingDisabled}
                   onClick={() => selectProfile(profile.id)}
                 >
-                  {profile.label}
+                  {t(profile.label)}
                 </button>
               ))}
-            </div> : <p className="active-preset">{isColoc ? '双通道共定位' : activeProfile.label}</p>}
-            <p className="panel-note preset-description">{activeProfile.description}</p>
+            </div> : <p className="active-preset">{isColoc ? t('双通道共定位') : t(activeProfile.label)}</p>}
+            <p className="panel-note preset-description">{t(activeProfile.description)}</p>
           </section>
           <InfoPanel
             image={project.image}
@@ -539,7 +543,7 @@ export default function App() {
               collapseSegmentation={scene === 'stain'}
               threshold={project.threshold}
               segmentation={project.segmentation}
-              quantifyLabel={getStainProfile(project.profileId).quantifyLabel}
+              quantifyLabel={t(getStainProfile(project.profileId).quantifyLabel)}
               stainVectors={stainOverride ?? getStainProfile(project.profileId).stains}
               presetVectors={getStainProfile(project.profileId).stains}
               onVectorsChange={(pair) => setStainOverride(project.profileId, pair)}
@@ -554,7 +558,7 @@ export default function App() {
           )}
           {!isColoc && (
             <details key={`ai-${scene}`} className="panel panel-disclosure" open={scene === 'ihc'}>
-              <summary>AI 核分割（可选）{aiUseState && ' · 已启用'}</summary>
+              <summary>{t("AI 核分割（可选）")}{aiUseState && t(' · 已启用')}</summary>
             <AiPanel
               modelName={aiModelName}
               aiActive={aiActive}

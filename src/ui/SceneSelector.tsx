@@ -1,3 +1,4 @@
+import { t } from '../i18n.ts';
 import type { AnalysisScene } from './analysis-scenes.ts';
 
 const SCENES: { id: AnalysisScene; label: string; description: string; symbol: string }[] = [
@@ -14,10 +15,10 @@ interface SceneSelectorProps {
 
 export default function SceneSelector({ scene, disabled, onChange }: SceneSelectorProps) {
   return (
-    <section className="scene-selector" aria-label="分析场景">
+    <section className="scene-selector" aria-label={t("分析场景")}>
       <div className="scene-selector-heading">
-        <h2>选择分析场景</h2>
-        <span>选择场景后，导入图像开始分析</span>
+        <h2>{t("选择分析场景")}</h2>
+        <span>{t("选择场景后，导入图像开始分析")}</span>
       </div>
       <div className="scene-options">
         {SCENES.map((item) => (
@@ -25,15 +26,15 @@ export default function SceneSelector({ scene, disabled, onChange }: SceneSelect
             type="button"
             key={item.id}
             className="scene-option"
-            aria-label={item.label}
+            aria-label={t(item.label)}
             aria-pressed={scene === item.id}
             disabled={disabled}
             onClick={() => onChange(item.id)}
           >
             <span className="scene-symbol" aria-hidden="true">{item.symbol}</span>
             <span className="scene-option-copy">
-              <strong>{item.label}</strong>
-              <span>{item.description}</span>
+              <strong><span className="scene-long-label">{t(item.label)}</span><span className="scene-compact-label">{item.id === 'stain' ? 'H&E / Masson' : item.symbol}</span></strong>
+              <span>{t(item.description)}</span>
             </span>
             <span className="scene-indicator" aria-hidden="true">{scene === item.id ? '✓' : ''}</span>
           </button>

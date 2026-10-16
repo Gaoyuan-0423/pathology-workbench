@@ -1,3 +1,5 @@
+import { t } from '../i18n.ts';
+import { localizeReport } from './localize-report.ts';
 import { useMemo, useState } from 'react';
 import { buildFullReport, groupsFromSamples } from '../core/api.ts';
 import { evaluateDiagnostics, type DiagnosticsReport } from '../core/advisor.ts';
@@ -58,31 +60,31 @@ export default function AdvisorPanel({
 
   return (
     <section className="panel">
-      <h3>一键体检 {report && <span className="advisor-score">{report.score} 分</span>}</h3>
-      {!report && <p className="panel-note">导入图像后可对当前配置与结果做自动化体检。</p>}
+      <h3>{t("一键体检 ")}{report && <span className="advisor-score">{report.score} {t("分")}</span>}</h3>
+      {!report && <p className="panel-note">{t("导入图像后可对当前配置与结果做自动化体检。")}</p>}
       {report && counts && (
         <>
           <div className="sev-badges">
-            {counts.error > 0 && <span className="sev-badge sev-error">问题 {counts.error}</span>}
-            {counts.warn > 0 && <span className="sev-badge sev-warn">警告 {counts.warn}</span>}
-            {counts.info > 0 && <span className="sev-badge sev-info">提示 {counts.info}</span>}
+            {counts.error > 0 && <span className="sev-badge sev-error">{t("问题 ")}{counts.error}</span>}
+            {counts.warn > 0 && <span className="sev-badge sev-warn">{t("警告 ")}{counts.warn}</span>}
+            {counts.info > 0 && <span className="sev-badge sev-info">{t("提示 ")}{counts.info}</span>}
             {counts.error + counts.warn + counts.info === 0 && (
-              <span className="sev-badge sev-ok">全部通过</span>
+              <span className="sev-badge sev-ok">{t("全部通过")}</span>
             )}
           </div>
-          <p className="panel-note">{report.summary}</p>
+          <p className="panel-note">{t(report.summary)}</p>
           {report.issues.length > 0 && (
             <ul className="advisor-list">
               {(expanded ? report.issues : report.issues.slice(0, 4)).map((issue, index) => {
                 const meta = SEVERITY_META[issue.severity];
                 return (
                   <li key={index} className={`advisor-item ${meta.className}`}>
-                    <span className="sev-tag">{meta.label}</span>
+                    <span className="sev-tag">{t(meta.label)}</span>
                     <div>
                       <p className="advisor-message">
-                        <em>{issue.category}</em> · {issue.message}
+                        <em>{t(issue.category)}</em> · {t(issue.message)}
                       </p>
-                      {issue.suggestion && <p className="advisor-suggestion">→ {issue.suggestion}</p>}
+                      {issue.suggestion && <p className="advisor-suggestion">→ {t(issue.suggestion)}</p>}
                     </div>
                   </li>
                 );
@@ -91,7 +93,7 @@ export default function AdvisorPanel({
           )}
           {report.issues.length > 4 && (
             <button type="button" className="link-button" onClick={() => setExpanded(!expanded)}>
-              {expanded ? '收起' : `展开全部 ${report.issues.length} 条`}
+              {expanded ? t('收起') : t(`展开全部 ${report.issues.length} 条`)}
             </button>
           )}
           <div className="export-buttons">
@@ -100,28 +102,27 @@ export default function AdvisorPanel({
               onClick={() => {
                 if (!fullReport) return;
                 downloadText(
-                  JSON.stringify(fullReport, null, 2),
+                  JSON.stringify(localizeReport(fullReport), null, 2),
                   `pathology-report-${new Date().toISOString().slice(0, 10)}.json`,
                   'application/json',
                 );
                 onStatus('已导出体检报告 JSON', 'ok');
               }}
             >
-              导出报告 JSON
-            </button>
+              {t("导出报告 JSON")}</button>
             <button
               type="button"
               onClick={() => {
                 if (!fullReport) return;
                 const text = [
-                  `# 病理工作台体检报告 ${fullReport.generatedAt}`,
-                  `总评：${report.summary}（${report.score} 分）`,
+                  `# ${t("病理工作台体检报告")} ${fullReport.generatedAt}`,
+                  `${t("总评")}: ${t(report.summary)} (${report.score} ${t("分")})`,
                   '',
                   ...report.issues.map(
-                    (issue) => `- [${issue.severity}] ${issue.category}：${issue.message}${issue.suggestion ? `\n  建议：${issue.suggestion}` : ''}`,
+                    (issue) => `- [${issue.severity}] ${t(issue.category)}：${t(issue.message)}${issue.suggestion ? `\n  ${t("建议")}: ${t(issue.suggestion)}` : ''}`,
                   ),
                   '',
-                  '## Methods（中）',
+                  '## ' + t('Methods（中文）'),
                   fullReport.methods.zh,
                   '## Methods (EN)',
                   fullReport.methods.en,
@@ -130,8 +131,7 @@ export default function AdvisorPanel({
                 onStatus('已导出体检报告 Markdown', 'ok');
               }}
             >
-              导出报告 MD
-            </button>
+              {t("导出报告 MD")}</button>
           </div>
         </>
       )}

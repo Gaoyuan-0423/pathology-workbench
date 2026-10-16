@@ -1,3 +1,4 @@
+import { tError, t } from '../i18n.ts';
 import type { AnalysisResult } from '../core/types.ts';
 
 interface ResultsPanelProps {
@@ -15,43 +16,42 @@ export default function ResultsPanel({ result, running, hasImage }: ResultsPanel
   if (result.coloc) {
     return (
       <section className="panel">
-        <h3>共定位结果 {running && <span className="running-badge">分析中…</span>}</h3>
+        <h3>{t("共定位结果 ")}{running && <span className="running-badge">{t("分析中…")}</span>}</h3>
         <table className="result-table">
           <tbody>
-            <tr><td>掩膜 Pearson r（主指标）</td><td>{result.coloc.pearsonMasked.toFixed(3)}</td></tr>
-            <tr><td>全像素 Pearson r（参考）</td><td>{Number.isFinite(result.coloc.pearsonAll) ? result.coloc.pearsonAll.toFixed(3) : '—'}</td></tr>
-            <tr><td>Manders M1（A 在 B 阳性区）</td><td>{result.coloc.mandersM1.toFixed(3)}</td></tr>
-            <tr><td>Manders M2（B 在 A 阳性区）</td><td>{result.coloc.mandersM2.toFixed(3)}</td></tr>
-            <tr><td>通道阈值 A / B</td><td>{result.coloc.thresholdA} / {result.coloc.thresholdB}</td></tr>
-            <tr><td>背景水平 A / B</td><td>{result.coloc.backgroundA} / {result.coloc.backgroundB}</td></tr>
+            <tr><td>{t("掩膜 Pearson r（主指标）")}</td><td>{result.coloc.pearsonMasked.toFixed(3)}</td></tr>
+            <tr><td>{t("全像素 Pearson r（参考）")}</td><td>{Number.isFinite(result.coloc.pearsonAll) ? result.coloc.pearsonAll.toFixed(3) : '—'}</td></tr>
+            <tr><td>{t("Manders M1（A 在 B 阳性区）")}</td><td>{result.coloc.mandersM1.toFixed(3)}</td></tr>
+            <tr><td>{t("Manders M2（B 在 A 阳性区）")}</td><td>{result.coloc.mandersM2.toFixed(3)}</td></tr>
+            <tr><td>{t("通道阈值 A / B")}</td><td>{result.coloc.thresholdA} / {result.coloc.thresholdB}</td></tr>
+            <tr><td>{t("背景水平 A / B")}</td><td>{result.coloc.backgroundA} / {result.coloc.backgroundB}</td></tr>
           </tbody>
         </table>
         <p className="panel-note">
-          Pearson 范围 −1…1；Manders 0…1。掩膜 = 任一通道超阈像素。
-        </p>
+          {t("Pearson 范围 −1…1；Manders 0…1。掩膜 = 任一通道超阈像素。")}</p>
       </section>
     );
   }
   return (
     <section className="panel">
-      <h3>定量结果 {running && <span className="running-badge">分析中…</span>}</h3>
-      {!result && !running && <p className="panel-note">调整参数后自动分析。</p>}
+      <h3>{t("定量结果 ")}{running && <span className="running-badge">{t("分析中…")}</span>}</h3>
+      {!result && !running && <p className="panel-note">{t("调整参数后自动分析。")}</p>}
       {result && (
         <>
           <table className="result-table">
             <thead>
               <tr>
-                <th>区域</th>
-                <th>阳性面积</th>
-                <th>阳性核/总核</th>
-                <th>标注指数</th>
+                <th>{t("区域")}</th>
+                <th>{t("阳性面积")}</th>
+                <th>{t("阳性核/总核")}</th>
+                <th>{t("标注指数")}</th>
                 <th>IOD</th>
-                <th>平均 OD</th>
+                <th>{t("平均 OD")}</th>
               </tr>
             </thead>
             <tbody>
               <tr className="result-overall">
-                <td>整图</td>
+                <td>{t("整图")}</td>
                 <td>{pct(result.overall.positiveFraction)}</td>
                 <td>{result.overall.positiveNuclei}/{result.overall.totalNuclei}</td>
                 <td>{pct(result.overall.labelingIndex)}</td>
@@ -72,12 +72,11 @@ export default function ResultsPanel({ result, running, hasImage }: ResultsPanel
           </table>
           {result.overall.densityPerMm2 !== null && (
             <p className="panel-note">
-              细胞密度（整图折算）：{result.overall.densityPerMm2.toFixed(1)} 个/mm²；触边核 {result.overall.borderNuclei} 个
-            </p>
+              {t("细胞密度（整图折算）：")}{result.overall.densityPerMm2.toFixed(1)} {t("个/mm²；触边核 ")}{result.overall.borderNuclei} {t("个")}</p>
           )}
           <p className="panel-note">
-            阈值 {result.thresholdUsed}（OD 0–255）· 背景水平 {result.backgroundLevel}
-            {result.warnings.map((warning) => ` · ${warning}`)}
+            {t("阈值 ")}{result.thresholdUsed}{t("（OD 0–255）· 背景水平 ")}{result.backgroundLevel}
+            {result.warnings.map((warning) => ` · ${tError(warning)}`)}
           </p>
         </>
       )}

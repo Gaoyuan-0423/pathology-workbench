@@ -1,3 +1,4 @@
+import { t } from '../i18n.ts';
 import type { Calibration, LoadedImage } from '../core/types.ts';
 
 interface InfoPanelProps {
@@ -15,22 +16,22 @@ export default function InfoPanel({ image, calibration, onMppChange, onClear }: 
   if (!image) return null;
   return (
     <section className="panel">
-      <h3>图像信息</h3>
+      <h3>{t("图像信息")}</h3>
       <dl className="kv">
-        <dt>文件</dt>
+        <dt>{t("文件")}</dt>
         <dd title={image.name}>{image.name}</dd>
-        <dt>来源格式</dt>
+        <dt>{t("来源格式")}</dt>
         <dd>
           {image.sourceType}
           {image.sourceType === 'TIFF16' ? ` · ${image.bitsPerSample}bit` : ''}
         </dd>
-        <dt>原始尺寸</dt>
+        <dt>{t("原始尺寸")}</dt>
         <dd>{image.sourceWidth} × {image.sourceHeight} px</dd>
-        <dt>工作图</dt>
+        <dt>{t("工作图")}</dt>
         <dd>
-          {image.workingWidth} × {image.workingHeight} px（{fmtScale(image.workingScale)}）
+          {image.workingWidth} × {image.workingHeight} px（{t(fmtScale(image.workingScale))}）
         </dd>
-        <dt>像素尺寸</dt>
+        <dt>{t("像素尺寸")}</dt>
         <dd>
           <input
             type="number"
@@ -38,7 +39,7 @@ export default function InfoPanel({ image, calibration, onMppChange, onClear }: 
             max={100}
             step={0.01}
             value={calibration.mpp ?? ''}
-            placeholder="μm/px（可选）"
+            placeholder={t("μm/px（可选）")}
             onChange={(event) => {
               const value = Number(event.target.value);
               onMppChange(Number.isFinite(value) && value > 0 ? value : null);
@@ -46,11 +47,10 @@ export default function InfoPanel({ image, calibration, onMppChange, onClear }: 
           />
         </dd>
       </dl>
-      {image.note && <p className="panel-note">{image.note}</p>}
+      {image.note && <p className="panel-note">{t(image.note)}</p>}
       <p className="panel-note">
-        假定像素值为 sRGB；未做任何颜色管理转换。标定 μm/px 后方可输出细胞密度。
-      </p>
-      <button type="button" className="button-danger" onClick={onClear}>清除图像</button>
+        {t("假定像素值为 sRGB；未做任何颜色管理转换。标定 μm/px 后方可输出细胞密度。")}</p>
+      <button type="button" className="button-danger" onClick={onClear}>{t("清除图像")}</button>
     </section>
   );
 }

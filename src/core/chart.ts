@@ -2,6 +2,7 @@
  * 手写 SVG 柱状图：组均值 ± 标准差 + 首组 vs 其余组的显著性星标。
  */
 import { significanceStars } from './stats.ts';
+import { t } from '../i18n.ts';
 import type { GroupStatsReport } from './analysis/statistics.ts';
 
 export interface BarChartOptions {
@@ -77,7 +78,7 @@ export function groupBarChartSvg(report: GroupStatsReport, options: BarChartOpti
   <line x1="${margin.left}" y1="${(margin.top + plotH).toFixed(1)}" x2="${(margin.left + plotW).toFixed(1)}" y2="${(margin.top + plotH).toFixed(1)}" stroke="#334155" stroke-width="1.2"/>
   ${bars}
   ${brackets}
-  <text x="14" y="${(margin.top + plotH / 2).toFixed(1)}" font-size="12" fill="#334155" transform="rotate(-90 14 ${(margin.top + plotH / 2).toFixed(1)})" text-anchor="middle">${escapeXml(options.yLabel)}（均值 ± SD）</text>
+  <text x="14" y="${(margin.top + plotH / 2).toFixed(1)}" font-size="12" fill="#334155" transform="rotate(-90 14 ${(margin.top + plotH / 2).toFixed(1)})" text-anchor="middle">${escapeXml(options.yLabel)}${t("（均值 ± SD）")}</text>
 </svg>`;
 }
 

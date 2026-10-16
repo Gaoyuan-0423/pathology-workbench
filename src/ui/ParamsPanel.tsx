@@ -1,3 +1,4 @@
+import { t } from '../i18n.ts';
 import { useId, useRef } from 'react';
 import type { SegmentationConfig, ThresholdConfig, Vec3 } from '../core/types.ts';
 
@@ -50,7 +51,7 @@ export default function ParamsPanel({
   const segmentationFields = (
     <>
       <div className="field-row">
-        <label htmlFor={`${formId}-min-area`}>最小面积 px</label>
+        <label htmlFor={`${formId}-min-area`}>{t("最小面积 px")}</label>
         <input
           id={`${formId}-min-area`}
           type="number"
@@ -64,7 +65,7 @@ export default function ParamsPanel({
         />
       </div>
       <div className="field-row">
-        <label htmlFor={`${formId}-max-area`}>最大面积 px</label>
+        <label htmlFor={`${formId}-max-area`}>{t("最大面积 px")}</label>
         <input
           id={`${formId}-max-area`}
           type="number"
@@ -78,7 +79,7 @@ export default function ParamsPanel({
         />
       </div>
       <div className="field-row">
-        <label htmlFor={`${formId}-circularity`}>最小圆度</label>
+        <label htmlFor={`${formId}-circularity`}>{t("最小圆度")}</label>
         <input
           id={`${formId}-circularity`}
           type="number"
@@ -93,22 +94,21 @@ export default function ParamsPanel({
         />
       </div>
       <p className="panel-note">
-        核由苏木精通道逐图 Otsu 分割；圆度按 4 邻域边界周长定义（4πA/P²，偏低估）。
-      </p>
+        {t("核由苏木精通道逐图 Otsu 分割；圆度按 4 邻域边界周长定义（4πA/P²，偏低估）。")}</p>
     </>
   );
 
   return (
-    <section className="panel" aria-label="染色定量参数">
-      <h3>{quantifyLabel} 阈值与背景</h3>
+    <section className="panel" aria-label={t("染色定量参数")}>
+      <h3>{quantifyLabel} {t("阈值与背景")}</h3>
       <div className="field-row">
-        <span id={`${formId}-threshold-mode`} className="field-label">阈值模式</span>
+        <span id={`${formId}-threshold-mode`} className="field-label">{t("阈值模式")}</span>
         <div className="segmented" role="group" aria-labelledby={`${formId}-threshold-mode`}>
           {(
             [
-              ['auto', '逐图自动'],
-              ['manual', '手动'],
-              ['control', '对照片'],
+              ['auto', t('逐图自动')],
+              ['manual', t('手动')],
+              ['control', t('对照片')],
             ] as const
           ).map(([mode, label]) => (
             <button
@@ -119,7 +119,7 @@ export default function ParamsPanel({
               className={threshold.mode === mode ? 'segment-active' : ''}
               onClick={() => onThresholdChange({ mode })}
             >
-              {label}
+              {t(label)}
             </button>
           ))}
         </div>
@@ -127,7 +127,7 @@ export default function ParamsPanel({
 
       {threshold.mode === 'auto' && (
         <div className="field-row">
-          <label htmlFor={`${formId}-method`}>自动方法</label>
+          <label htmlFor={`${formId}-method`}>{t("自动方法")}</label>
           <select
             id={`${formId}-method`}
             value={threshold.method}
@@ -137,7 +137,7 @@ export default function ParamsPanel({
             }
           >
             {METHODS.map((method) => (
-              <option key={method.id} value={method.id}>{method.label}</option>
+              <option key={method.id} value={method.id}>{t(method.label)}</option>
             ))}
           </select>
         </div>
@@ -145,7 +145,7 @@ export default function ParamsPanel({
 
       {threshold.mode === 'manual' && (
         <div className="field-row">
-          <label htmlFor={`${formId}-manual-threshold`}>阈值（OD 0–255）</label>
+          <label htmlFor={`${formId}-manual-threshold`}>{t("阈值（OD 0–255）")}</label>
           <input
             id={`${formId}-manual-threshold`}
             type="range"
@@ -163,7 +163,7 @@ export default function ParamsPanel({
         <div className="control-block">
           <input
             ref={controlInputRef}
-            aria-label="对照片图像"
+            aria-label={t("对照片图像")}
             type="file"
             accept=".png,.jpg,.jpeg,.tif,.tiff"
             hidden
@@ -178,18 +178,17 @@ export default function ParamsPanel({
             disabled={disabled || calibrating}
             onClick={() => controlInputRef.current?.click()}
           >
-            {calibrating ? '标定中…' : '导入对照片并标定'}
+            {calibrating ? t('标定中…') : t('导入对照片并标定')}
           </button>
           {threshold.controlThreshold !== null && (
             <p className="panel-note">
-              已标定：阈值 {threshold.controlThreshold}（来自 {threshold.controlImageName}）
+              {t("已标定：阈值 ")}{threshold.controlThreshold}{t("（来自 ")}{threshold.controlImageName}）
               <button type="button" className="link-button" onClick={() => onThresholdChange({ controlThreshold: null, controlImageName: null })}>
-                清除
-              </button>
+                {t("清除")}</button>
             </p>
           )}
           <div className="field-row">
-            <label htmlFor={`${formId}-false-positive-rate`}>允许假阳率</label>
+            <label htmlFor={`${formId}-false-positive-rate`}>{t("允许假阳率")}</label>
             <input
               id={`${formId}-false-positive-rate`}
               type="number"
@@ -205,12 +204,12 @@ export default function ParamsPanel({
               }
             />
           </div>
-          <p className="panel-note">阈值取对照分布的 (1−假阳率) 分位；标定后对所有图像统一使用。</p>
+          <p className="panel-note">{t("阈值取对照分布的 (1−假阳率) 分位；标定后对所有图像统一使用。")}</p>
         </div>
       )}
 
       <div className="field-row">
-        <label htmlFor={`${formId}-background`}>背景百分位</label>
+        <label htmlFor={`${formId}-background`}>{t("背景百分位")}</label>
         <input
           id={`${formId}-background`}
           type="number"
@@ -228,31 +227,29 @@ export default function ParamsPanel({
 
       {collapseSegmentation ? (
         <details className="advanced-block">
-          <summary>细胞核分割（可选）</summary>
+          <summary>{t("细胞核分割（可选）")}</summary>
           {segmentationFields}
         </details>
       ) : (
         <>
-          <h3>细胞核分割门控</h3>
+          <h3>{t("细胞核分割门控")}</h3>
           {segmentationFields}
         </>
       )}
 
       {presetVectors && (
         <details className="advanced-block">
-          <summary>高级：染色向量微调</summary>
+          <summary>{t("高级：染色向量微调")}</summary>
           <p className="panel-note">
-            当前向量出自预设文献值{stainVectors === presetVectors ? '' : '（已自定义）'}。
-            两种染色的 RGB 向量按你的实际染色协议微调；两向量近乎平行时无法去卷积。
-          </p>
+            {t("当前向量出自预设文献值")}{stainVectors === presetVectors ? '' : t('（已自定义）')}{t("。 两种染色的 RGB 向量按你的实际染色协议微调；两向量近乎平行时无法去卷积。")}</p>
           {([0, 1] as const).map((slot) => (
             <div key={slot} className="field-row">
-              <span id={`${formId}-vector-${slot}`} className="field-label">{slot === 0 ? '第一染色 RGB' : `第二染色（${quantifyLabel}）RGB`}</span>
+              <span id={`${formId}-vector-${slot}`} className="field-label">{slot === 0 ? t('第一染色 RGB') : t(`第二染色（${quantifyLabel}）RGB`)}</span>
               <span className="vector-inputs" role="group" aria-labelledby={`${formId}-vector-${slot}`}>
                 {([0, 1, 2] as const).map((component) => (
                   <input
                     key={component}
-                    aria-label={`${slot === 0 ? '第一染色' : `第二染色（${quantifyLabel}）`} ${['R', 'G', 'B'][component]} 向量`}
+                    aria-label={t(`${slot === 0 ? t('第一染色') : t(`第二染色（${quantifyLabel}）`)} ${['R', 'G', 'B'][component]} 向量`)}
                     type="number"
                     min={-1}
                     max={1}
@@ -273,8 +270,7 @@ export default function ParamsPanel({
           ))}
           {stainVectors !== presetVectors && (
             <button type="button" className="link-button" onClick={() => onVectorsChange(null)}>
-              恢复预设向量
-            </button>
+              {t("恢复预设向量")}</button>
           )}
         </details>
       )}
@@ -285,8 +281,7 @@ export default function ParamsPanel({
           checked={showOverlay}
           onChange={(event) => onShowOverlayChange(event.target.checked)}
         />
-        显示阳性叠加层
-      </label>
+        {t("显示阳性叠加层")}</label>
     </section>
   );
 }
