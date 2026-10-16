@@ -35,12 +35,13 @@ export default function UploadPanel({ busy, onFile }: UploadPanelProps) {
           event.target.value = '';
         }}
       />
-      <p className="dropzone-title">{busy ? '正在解码…' : '拖入显微图像，或'}</p>
-      <button type="button" disabled={busy} onClick={() => inputRef.current?.click()}>
-        选择文件
-      </button>
-      <p className="dropzone-hint">支持 PNG / JPEG / TIFF（8 与 16bit，多页取最大页）</p>
-      <p className="dropzone-hint">厂商全切片格式（.svs/.ndpi/.mrxs）请先从采集软件导出 TIFF</p>
+      <span className="upload-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M12 16V4m-4 4 4-4 4 4M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4" strokeLinecap="round" strokeLinejoin="round"/></svg></span>
+      <div className="dropzone-copy">
+        <p className="dropzone-title">{busy ? '正在解码图像…' : '拖入显微图像，开始分析'}</p>
+        <p className="dropzone-hint">PNG / JPEG / TIFF · 8 / 16-bit · 多页取最大页</p>
+        <p className="dropzone-format-note">全切片 .svs / .ndpi / .mrxs 请先导出为 TIFF</p>
+      </div>
+      <button type="button" disabled={busy} onClick={() => inputRef.current?.click()}>选择文件</button>
     </section>
   );
 }

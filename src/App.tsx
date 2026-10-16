@@ -414,16 +414,26 @@ export default function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <div>
-          <h1>Pathology Workbench</h1>
-          <p className="app-subtitle">离线病理染色定量 · 免疫荧光共定位 · 颜色去卷积 · 统计与出版导出</p>
+        <a className="app-brand" href="./" aria-label="Pathology Workbench 病理工作台">
+          <span className="brand-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="m8 3 6 6-4 4-6-6zM7 10l-2 2m7-1 2 2M9 19h10M5 21h16M14 5a8 8 0 0 1 4 14M7 16h5" strokeLinecap="round" strokeLinejoin="round"/></svg></span>
+          <span><h1>病理工作台</h1><span className="app-subtitle">Pathology Workbench</span></span>
+        </a>
+        <nav className="suite-nav" aria-label="科研工作台导航">
+          <a href="https://gaoyuan-0423.github.io/blot-workbench/">WB <span>条带分析</span></a>
+          <a href="./" aria-current="page">病理 <span>图像定量</span></a>
+          <a href="https://gaoyuan-0423.github.io/pcr-workbench/">PCR <span>表达分析</span></a>
+        </nav>
+        <div className="header-meta">
+          <span className="local-badge"><span aria-hidden="true"/>本地处理 · 图像不上传</span>
+          {status.message && (
+            <span className={`status status-${status.kind}`} role="status">{status.message}</span>
+          )}
         </div>
-        {status.message && (
-          <span className={`status status-${status.kind}`} role="status">{status.message}</span>
-        )}
       </header>
       <main className="app-main">
         <div className="canvas-column">
+          <div className="workspace-heading"><div><p className="section-eyebrow">IMAGE WORKSPACE</p><h2>图像与定量结果</h2></div><span className="profile-badge">{getStainProfile(project.profileId).label}</span></div>
+          <UploadPanel busy={status.kind === 'busy'} onFile={(file) => void handleFile(file)} />
           <CanvasView
             pixels={project.pixels}
             rois={project.rois}
@@ -433,8 +443,11 @@ export default function App() {
             onRoiDrawn={handleRoiDrawn}
             onLineDrawn={setPendingLinePx}
           />
+          <div className="workspace-caption"><span>{project.image ? project.image.name : '支持病理染色、免疫组化与免疫荧光图像'}</span><span>滚轮缩放 · 拖动平移</span></div>
+          <div className="analysis-results"><ResultsPanel result={analysis} running={analyzing} hasImage={hasImage} /></div>
         </div>
         <aside className="side-panel">
+          <div className="settings-heading"><div><p className="section-eyebrow">ANALYSIS SETTINGS</p><h2>分析设置</h2></div><span>调整后自动计算</span></div>
           <section className="panel">
             <h3>分析预设</h3>
             <div className="profile-grid">
@@ -451,7 +464,6 @@ export default function App() {
               ))}
             </div>
           </section>
-          <UploadPanel busy={status.kind === 'busy'} onFile={(file) => void handleFile(file)} />
           <InfoPanel
             image={project.image}
             calibration={project.calibration}
@@ -550,7 +562,6 @@ export default function App() {
             statsMetric={statsMetric}
             onStatus={(message, kind) => setStatus({ kind, message })}
           />
-          <ResultsPanel result={analysis} running={analyzing} hasImage={hasImage} />
         </aside>
       </main>
     </div>

@@ -61,7 +61,7 @@ export default function CanvasView({
 
   useEffect(() => {
     fittedRef.current = false;
-  }, [pixels]);
+  }, [pixels, size.w, size.h]);
 
   useEffect(() => {
     if (pixels && !fittedRef.current && size.w > 0) {
@@ -90,7 +90,7 @@ export default function CanvasView({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = '#e8ecf2';
+    ctx.fillStyle = '#eef0f6';
     ctx.fillRect(0, 0, size.w, size.h);
     if (!offscreen || !pixels) return;
 
@@ -246,7 +246,7 @@ export default function CanvasView({
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
       />
-      {!pixels && <div className="canvas-empty">导入图像后在此显示</div>}
+      {!pixels && <div className="canvas-empty"><div className="canvas-empty-content"><span className="empty-image-icon" aria-hidden="true"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="8" y="8" width="32" height="32" rx="5"/><circle cx="19" cy="19" r="3"/><path d="m9 32 10-9 8 7 6-5 7 7" strokeLinecap="round" strokeLinejoin="round"/></svg></span><h2>在这里观察每一处细节</h2><p>导入图像后，可框选 ROI、标定比例尺并核对分割结果。</p><span className="empty-image-note">分析结果会显示在图像下方</span></div></div>}
     </div>
   );
 }
