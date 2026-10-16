@@ -36,6 +36,8 @@ import ParamsPanel from './ui/ParamsPanel.tsx';
 import ResultsPanel from './ui/ResultsPanel.tsx';
 import RoiList from './ui/RoiList.tsx';
 import SamplesPanel from './ui/SamplesPanel.tsx';
+import SceneSelector from './ui/SceneSelector.tsx';
+import { sceneForProfile, type AnalysisScene } from './ui/analysis-scenes.ts';
 import UploadPanel from './ui/UploadPanel.tsx';
 
 const STORAGE_KEY = 'pathology-workbench:project:v1';
@@ -112,12 +114,14 @@ export default function App() {
   const [aiUseState, setAiUseState] = useState(false);
   const [aiNonce, setAiNonce] = useState(0);
   const [statsMetric, setStatsMetric] = useState<MetricKey>('positiveFraction');
+  const lastStainProfile = useRef<StainProfileId>('h_eosin');
 
   useEffect(() => {
     void (async () => {
       try {
         const saved = await get<ProjectState>(STORAGE_KEY);
-        if (saved?.version === 1 && saved.pixels instanceof ImageData) {
+        if (saved?.version === 1 && (saved.pixels instanceof ImageData || saved.pixels === null)) {
+          if (sceneForProfile(saved.profileId) === 'stain') lastStainProfile.current = saved.profileId;
           setProject({
             ...createEmptyProject(),
             ...saved,
@@ -151,6 +155,7 @@ export default function App() {
       return;
     }
     setAnalyzing(true);
+    let active = true;
     const timer = window.setTimeout(() => {
       const ai = {
         useAi: useAiRef.current && aiModelRef.current !== null,
@@ -160,13 +165,17 @@ export default function App() {
             : null,
       };
       void runAnalysis(pixels, rois, profileId, threshold, segmentation, calibration, coloc, stainOverride, ai).then((result) => {
+        if (!active) return;
         if (result.aiModelLoaded) lastLoadedModelRef.current = result.aiModelLoaded;
         setAiActive(result.aiUsed);
         setAnalysis(result);
         setAnalyzing(false);
       });
     }, 400);
-    return () => window.clearTimeout(timer);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
   }, [pixels, rois, profileId, threshold, segmentation, calibration, coloc, stainOverride, aiNonce]);
 
   const handleFile = useCallback(async (file: File) => {
@@ -381,6 +390,21 @@ export default function App() {
 
   const hasImage = Boolean(project.pixels);
   const isColoc = project.profileId === 'if_coloc';
+  const scene = sceneForProfile(project.profileId);
+  const activeProfile = getStainProfile(project.profileId);
+  const switchingDisabled = !loaded || status.kind === 'busy' || calibrating || Boolean(batch?.running);
+
+  function selectProfile(nextProfile: StainProfileId) {
+    if (nextProfile === project.profileId) return;
+    if (sceneForProfile(nextProfile) === 'stain') lastStainProfile.current = nextProfile;
+    setAnalysis(null);
+    setProject((prev) => ({ ...prev, profileId: nextProfile }));
+  }
+
+  function selectScene(nextScene: AnalysisScene) {
+    const nextProfile = nextScene === 'ihc' ? 'h_dab' : nextScene === 'if' ? 'if_coloc' : lastStainProfile.current;
+    selectProfile(nextProfile);
+  }
 
   // 程序化 API：控制台/脚本可调用（只读 + 报告导出）
   const reportRef = useRef<{ json: () => unknown } | null>(null);
@@ -438,10 +462,15 @@ export default function App() {
           )}
         </div>
       </header>
+      <SceneSelector scene={scene} disabled={switchingDisabled} onChange={selectScene} />
       <main className="app-main">
         <div className="canvas-column">
           <div className="workspace-heading"><div><p className="section-eyebrow">IMAGE WORKSPACE</p><h2>图像与定量结果</h2></div><span className="profile-badge">{getStainProfile(project.profileId).label}</span></div>
-          <UploadPanel busy={status.kind === 'busy'} onFile={(file) => void handleFile(file)} />
+          <UploadPanel
+            busy={status.kind === 'busy'}
+            prompt={isColoc ? '拖入 RGB 荧光图像，开始共定位分析' : `拖入 ${scene === 'ihc' ? 'H-DAB' : project.profileId === 'masson' ? 'Masson' : 'H&E'} 图像，开始分析`}
+            onFile={(file) => void handleFile(file)}
+          />
           <CanvasView
             pixels={project.pixels}
             rois={project.rois}
@@ -457,20 +486,23 @@ export default function App() {
         <aside className="side-panel">
           <div className="settings-heading"><div><p className="section-eyebrow">ANALYSIS SETTINGS</p><h2>分析设置</h2></div><span>调整后自动计算</span></div>
           <section className="panel">
-            <h3>分析预设</h3>
-            <div className="profile-grid">
-              {STAIN_PROFILES.map((profile) => (
+            <h3>{isColoc ? '分析任务' : '染色预设'}</h3>
+            {scene === 'stain' ? <div className="profile-grid">
+              {STAIN_PROFILES.filter((profile) => sceneForProfile(profile.id) === 'stain').map((profile) => (
                 <button
                   key={profile.id}
                   type="button"
                   title={profile.description}
                   className={project.profileId === profile.id ? 'profile-active' : ''}
-                  onClick={() => setProject((prev) => ({ ...prev, profileId: profile.id }))}
+                  aria-pressed={project.profileId === profile.id}
+                  disabled={switchingDisabled}
+                  onClick={() => selectProfile(profile.id)}
                 >
                   {profile.label}
                 </button>
               ))}
-            </div>
+            </div> : <p className="active-preset">{isColoc ? '双通道共定位' : activeProfile.label}</p>}
+            <p className="panel-note preset-description">{activeProfile.description}</p>
           </section>
           <InfoPanel
             image={project.image}
@@ -478,16 +510,6 @@ export default function App() {
             onMppChange={(mpp) => setProject((prev) => ({ ...prev, calibration: { mpp } }))}
             onClear={clearImage}
           />
-          {!isColoc && (
-            <BatchPanel
-              disabled={false}
-              batch={batch}
-              onBatch={(files, group) => void runBatch(files, group)}
-              onCancel={() => {
-                batchCancelRef.current = true;
-              }}
-            />
-          )}
           <RoiList
             rois={project.rois}
             drawRoi={drawMode === 'roi'}
@@ -513,6 +535,8 @@ export default function App() {
             />
           ) : (
             <ParamsPanel
+              key={`params-${scene}`}
+              collapseSegmentation={scene === 'stain'}
               threshold={project.threshold}
               segmentation={project.segmentation}
               quantifyLabel={getStainProfile(project.profileId).quantifyLabel}
@@ -529,6 +553,8 @@ export default function App() {
             />
           )}
           {!isColoc && (
+            <details key={`ai-${scene}`} className="panel panel-disclosure" open={scene === 'ihc'}>
+              <summary>AI 核分割（可选）{aiUseState && ' · 已启用'}</summary>
             <AiPanel
               modelName={aiModelName}
               aiActive={aiActive}
@@ -547,6 +573,17 @@ export default function App() {
                   setAiUseState(true);
                   setAiNonce((n) => n + 1); // 触发重分析
                 });
+              }}
+            />
+            </details>
+          )}
+          {!isColoc && (
+            <BatchPanel
+              disabled={false}
+              batch={batch}
+              onBatch={(files, group) => void runBatch(files, group)}
+              onCancel={() => {
+                batchCancelRef.current = true;
               }}
             />
           )}

@@ -16,7 +16,7 @@ test('采集 README 截图', async ({ page }) => {
 
   // 1. H-DAB 分析视图
   const hdab = createSyntheticHdabPng(560, 400);
-  await page.setInputFiles('input[type="file"]', {
+  await page.setInputFiles('.dropzone input[type="file"]', {
     name: 'ki67-hdab.png',
     mimeType: 'image/png',
     buffer: hdab.buffer,
@@ -27,9 +27,9 @@ test('采集 README 截图', async ({ page }) => {
   await page.screenshot({ path: `${OUT_DIR}/app-analysis.png` });
 
   // 2. IF 共定位视图
-  await page.getByRole('button', { name: 'IF 免疫荧光共定位' }).click();
+  await page.getByRole('button', { name: 'IF 免疫荧光', exact: true }).click();
   const coloc = createSyntheticColocPng(560, 400);
-  await page.setInputFiles('input[type="file"]', {
+  await page.setInputFiles('.dropzone input[type="file"]', {
     name: 'if-double.png',
     mimeType: 'image/png',
     buffer: coloc.buffer,

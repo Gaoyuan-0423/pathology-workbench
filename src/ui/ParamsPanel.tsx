@@ -1,9 +1,11 @@
-import { useRef } from 'react';
+import { useId, useRef } from 'react';
 import type { SegmentationConfig, ThresholdConfig, Vec3 } from '../core/types.ts';
 
 interface ParamsPanelProps {
   threshold: ThresholdConfig;
   segmentation: SegmentationConfig;
+  /** 非核计数场景默认收起分割设置，保留原有参数与计算行为。 */
+  collapseSegmentation?: boolean;
   /** 当前预设的定量通道名（DAB/伊红/苯胺蓝） */
   quantifyLabel: string;
   disabled: boolean;
@@ -30,6 +32,7 @@ const METHODS: Array<{ id: ThresholdConfig['method']; label: string }> = [
 export default function ParamsPanel({
   threshold,
   segmentation,
+  collapseSegmentation = false,
   quantifyLabel,
   stainVectors,
   presetVectors,
@@ -43,13 +46,64 @@ export default function ParamsPanel({
   onShowOverlayChange,
 }: ParamsPanelProps) {
   const controlInputRef = useRef<HTMLInputElement>(null);
+  const formId = useId();
+  const segmentationFields = (
+    <>
+      <div className="field-row">
+        <label htmlFor={`${formId}-min-area`}>最小面积 px</label>
+        <input
+          id={`${formId}-min-area`}
+          type="number"
+          min={1}
+          max={10000}
+          value={segmentation.minAreaPx}
+          disabled={disabled}
+          onChange={(event) =>
+            onSegmentationChange({ minAreaPx: Math.max(1, Math.round(Number(event.target.value) || 1)) })
+          }
+        />
+      </div>
+      <div className="field-row">
+        <label htmlFor={`${formId}-max-area`}>最大面积 px</label>
+        <input
+          id={`${formId}-max-area`}
+          type="number"
+          min={4}
+          max={200000}
+          value={segmentation.maxAreaPx}
+          disabled={disabled}
+          onChange={(event) =>
+            onSegmentationChange({ maxAreaPx: Math.max(4, Math.round(Number(event.target.value) || 4)) })
+          }
+        />
+      </div>
+      <div className="field-row">
+        <label htmlFor={`${formId}-circularity`}>最小圆度</label>
+        <input
+          id={`${formId}-circularity`}
+          type="number"
+          min={0}
+          max={1}
+          step={0.01}
+          value={segmentation.minCircularity}
+          disabled={disabled}
+          onChange={(event) =>
+            onSegmentationChange({ minCircularity: Math.min(1, Math.max(0, Number(event.target.value) || 0)) })
+          }
+        />
+      </div>
+      <p className="panel-note">
+        核由苏木精通道逐图 Otsu 分割；圆度按 4 邻域边界周长定义（4πA/P²，偏低估）。
+      </p>
+    </>
+  );
 
   return (
-    <section className="panel">
+    <section className="panel" aria-label="染色定量参数">
       <h3>{quantifyLabel} 阈值与背景</h3>
       <div className="field-row">
-        <label>阈值模式</label>
-        <div className="segmented">
+        <span id={`${formId}-threshold-mode`} className="field-label">阈值模式</span>
+        <div className="segmented" role="group" aria-labelledby={`${formId}-threshold-mode`}>
           {(
             [
               ['auto', '逐图自动'],
@@ -61,6 +115,7 @@ export default function ParamsPanel({
               key={mode}
               type="button"
               disabled={disabled}
+              aria-pressed={threshold.mode === mode}
               className={threshold.mode === mode ? 'segment-active' : ''}
               onClick={() => onThresholdChange({ mode })}
             >
@@ -72,8 +127,9 @@ export default function ParamsPanel({
 
       {threshold.mode === 'auto' && (
         <div className="field-row">
-          <label>自动方法</label>
+          <label htmlFor={`${formId}-method`}>自动方法</label>
           <select
+            id={`${formId}-method`}
             value={threshold.method}
             disabled={disabled}
             onChange={(event) =>
@@ -89,8 +145,9 @@ export default function ParamsPanel({
 
       {threshold.mode === 'manual' && (
         <div className="field-row">
-          <label>阈值（OD 0–255）</label>
+          <label htmlFor={`${formId}-manual-threshold`}>阈值（OD 0–255）</label>
           <input
+            id={`${formId}-manual-threshold`}
             type="range"
             min={0}
             max={255}
@@ -106,6 +163,7 @@ export default function ParamsPanel({
         <div className="control-block">
           <input
             ref={controlInputRef}
+            aria-label="对照片图像"
             type="file"
             accept=".png,.jpg,.jpeg,.tif,.tiff"
             hidden
@@ -131,8 +189,9 @@ export default function ParamsPanel({
             </p>
           )}
           <div className="field-row">
-            <label>允许假阳率</label>
+            <label htmlFor={`${formId}-false-positive-rate`}>允许假阳率</label>
             <input
+              id={`${formId}-false-positive-rate`}
               type="number"
               min={0}
               max={0.2}
@@ -151,8 +210,9 @@ export default function ParamsPanel({
       )}
 
       <div className="field-row">
-        <label>背景百分位</label>
+        <label htmlFor={`${formId}-background`}>背景百分位</label>
         <input
+          id={`${formId}-background`}
           type="number"
           min={0}
           max={25}
@@ -166,50 +226,17 @@ export default function ParamsPanel({
         <span className="field-value">%</span>
       </div>
 
-      <h3>细胞核分割门控</h3>
-      <div className="field-row">
-        <label>最小面积 px</label>
-        <input
-          type="number"
-          min={1}
-          max={10000}
-          value={segmentation.minAreaPx}
-          disabled={disabled}
-          onChange={(event) =>
-            onSegmentationChange({ minAreaPx: Math.max(1, Math.round(Number(event.target.value) || 1)) })
-          }
-        />
-      </div>
-      <div className="field-row">
-        <label>最大面积 px</label>
-        <input
-          type="number"
-          min={4}
-          max={200000}
-          value={segmentation.maxAreaPx}
-          disabled={disabled}
-          onChange={(event) =>
-            onSegmentationChange({ maxAreaPx: Math.max(4, Math.round(Number(event.target.value) || 4)) })
-          }
-        />
-      </div>
-      <div className="field-row">
-        <label>最小圆度</label>
-        <input
-          type="number"
-          min={0}
-          max={1}
-          step={0.01}
-          value={segmentation.minCircularity}
-          disabled={disabled}
-          onChange={(event) =>
-            onSegmentationChange({ minCircularity: Math.min(1, Math.max(0, Number(event.target.value) || 0)) })
-          }
-        />
-      </div>
-      <p className="panel-note">
-        核由苏木精通道逐图 Otsu 分割；圆度按 4 邻域边界周长定义（4πA/P²，偏低估）。
-      </p>
+      {collapseSegmentation ? (
+        <details className="advanced-block">
+          <summary>细胞核分割（可选）</summary>
+          {segmentationFields}
+        </details>
+      ) : (
+        <>
+          <h3>细胞核分割门控</h3>
+          {segmentationFields}
+        </>
+      )}
 
       {presetVectors && (
         <details className="advanced-block">
@@ -220,11 +247,12 @@ export default function ParamsPanel({
           </p>
           {([0, 1] as const).map((slot) => (
             <div key={slot} className="field-row">
-              <label>{slot === 0 ? '第一染色 RGB' : `第二染色（${quantifyLabel}）RGB`}</label>
-              <span className="vector-inputs">
+              <span id={`${formId}-vector-${slot}`} className="field-label">{slot === 0 ? '第一染色 RGB' : `第二染色（${quantifyLabel}）RGB`}</span>
+              <span className="vector-inputs" role="group" aria-labelledby={`${formId}-vector-${slot}`}>
                 {([0, 1, 2] as const).map((component) => (
                   <input
                     key={component}
+                    aria-label={`${slot === 0 ? '第一染色' : `第二染色（${quantifyLabel}）`} ${['R', 'G', 'B'][component]} 向量`}
                     type="number"
                     min={-1}
                     max={1}

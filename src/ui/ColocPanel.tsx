@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import type { ColocConfig } from '../core/types.ts';
 
 interface ColocPanelProps {
@@ -17,12 +18,15 @@ export default function ColocPanel({
   showOverlay,
   onShowOverlayChange,
 }: ColocPanelProps) {
+  const formId = useId();
   return (
-    <section className="panel">
+    <section className="panel" aria-label="共定位参数">
       <h3>共定位参数</h3>
+      <p className="panel-note">从 RGB 图像中选择两个颜色通道进行共定位分析。</p>
       <div className="field-row">
-        <label>通道 A</label>
+        <label htmlFor={`${formId}-channel-a`}>通道 A</label>
         <select
+          id={`${formId}-channel-a`}
           value={coloc.channelA}
           disabled={disabled}
           onChange={(event) => onChange({ channelA: Number(event.target.value) as 0 | 1 | 2 })}
@@ -33,8 +37,9 @@ export default function ColocPanel({
         </select>
       </div>
       <div className="field-row">
-        <label>通道 B</label>
+        <label htmlFor={`${formId}-channel-b`}>通道 B</label>
         <select
+          id={`${formId}-channel-b`}
           value={coloc.channelB}
           disabled={disabled}
           onChange={(event) => onChange({ channelB: Number(event.target.value) as 0 | 1 | 2 })}
@@ -46,8 +51,8 @@ export default function ColocPanel({
       </div>
 
       <div className="field-row">
-        <label>阈值模式</label>
-        <div className="segmented">
+        <span id={`${formId}-threshold-mode`} className="field-label">阈值模式</span>
+        <div className="segmented" role="group" aria-labelledby={`${formId}-threshold-mode`}>
           {(
             [
               ['auto', '逐图 Otsu'],
@@ -58,6 +63,7 @@ export default function ColocPanel({
               key={mode}
               type="button"
               disabled={disabled}
+              aria-pressed={coloc.thresholdMode === mode}
               className={coloc.thresholdMode === mode ? 'segment-active' : ''}
               onClick={() => onChange({ thresholdMode: mode })}
             >
@@ -70,8 +76,9 @@ export default function ColocPanel({
       {coloc.thresholdMode === 'manual' && (
         <>
           <div className="field-row">
-            <label>通道 A 阈值</label>
+            <label htmlFor={`${formId}-threshold-a`}>通道 A 阈值</label>
             <input
+              id={`${formId}-threshold-a`}
               type="range"
               min={0}
               max={255}
@@ -82,8 +89,9 @@ export default function ColocPanel({
             <span className="field-value">{coloc.manualA}</span>
           </div>
           <div className="field-row">
-            <label>通道 B 阈值</label>
+            <label htmlFor={`${formId}-threshold-b`}>通道 B 阈值</label>
             <input
+              id={`${formId}-threshold-b`}
               type="range"
               min={0}
               max={255}
@@ -97,8 +105,9 @@ export default function ColocPanel({
       )}
 
       <div className="field-row">
-        <label>背景百分位</label>
+        <label htmlFor={`${formId}-background`}>背景百分位</label>
         <input
+          id={`${formId}-background`}
           type="number"
           min={0}
           max={25}

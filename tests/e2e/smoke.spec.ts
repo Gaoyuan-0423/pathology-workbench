@@ -5,7 +5,7 @@ test('合成 IHC 图像全流程：导入 → 自动分析 → 指标可见 → 
   const fixture = createSyntheticHdabPng();
   await page.goto('/');
 
-  await page.setInputFiles('input[type="file"]', {
+  await page.setInputFiles('.dropzone input[type="file"]', {
     name: 'synthetic-hdab.png',
     mimeType: 'image/png',
     buffer: fixture.buffer,

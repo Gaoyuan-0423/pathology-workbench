@@ -2,10 +2,11 @@ import { useRef, useState } from 'react';
 
 interface UploadPanelProps {
   busy: boolean;
+  prompt?: string;
   onFile: (file: File) => void;
 }
 
-export default function UploadPanel({ busy, onFile }: UploadPanelProps) {
+export default function UploadPanel({ busy, prompt = '拖入显微图像，开始分析', onFile }: UploadPanelProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
 
@@ -37,7 +38,7 @@ export default function UploadPanel({ busy, onFile }: UploadPanelProps) {
       />
       <span className="upload-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M12 16V4m-4 4 4-4 4 4M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4" strokeLinecap="round" strokeLinejoin="round"/></svg></span>
       <div className="dropzone-copy">
-        <p className="dropzone-title">{busy ? '正在解码图像…' : '拖入显微图像，开始分析'}</p>
+        <p className="dropzone-title">{busy ? '正在解码图像…' : prompt}</p>
         <p className="dropzone-hint">PNG / JPEG / TIFF · 8 / 16-bit · 多页取最大页</p>
         <p className="dropzone-format-note">全切片 .svs / .ndpi / .mrxs 请先导出为 TIFF</p>
       </div>
