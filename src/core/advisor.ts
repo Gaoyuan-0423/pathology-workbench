@@ -93,6 +93,14 @@ export function evaluateDiagnostics(ctx: AdvisorContext): DiagnosticsReport {
         suggestion: '阳性与背景在 OD 直方图上未形成双峰；建议导入未染色对照片做阈值标定，或改手动模式。',
       });
     }
+    if (result.thresholdUsed < result.nuclearThresholdUsed) {
+      issues.push({
+        severity: 'warn',
+        category: '阈值',
+        message: `DAB 定量阈值（${result.thresholdUsed}）低于核复染阈值（${result.nuclearThresholdUsed}）`,
+        suggestion: '淡染细胞核会被误计为 DAB 阳性，labeling index 系统性偏高；建议提高阳性阈值（手动模式或对照片标定）后复核。',
+      });
+    }
     if (project.threshold.mode === 'control' && project.threshold.controlThreshold === null) {
       issues.push({
         severity: 'warn',

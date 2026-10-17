@@ -106,6 +106,16 @@ describe('evaluateDiagnostics', () => {
     expect(report.issues.some((issue) => issue.message.includes('尚未标定'))).toBe(true);
   });
 
+  it('DAB 阈值低于核复染阈值 → 弱阳性高估警告', () => {
+    const result = baseResult();
+    result.thresholdUsed = 13;
+    result.nuclearThresholdUsed = 15;
+    const report = evaluateDiagnostics(ctx({ result }));
+    const issue = report.issues.find((issue) => issue.message.includes('低于核复染阈值'));
+    expect(issue?.severity).toBe('warn');
+    expect(issue?.suggestion).toContain('labeling index');
+  });
+
   it('饱和像素过多 → 过曝警告', () => {
     const report = evaluateDiagnostics(ctx({ qc: { ...defaultQc, saturatedFraction: 0.12 } }));
     expect(report.issues.some((issue) => issue.message.includes('饱和'))).toBe(true);
