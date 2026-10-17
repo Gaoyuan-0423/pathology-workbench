@@ -57,4 +57,4 @@ GitHub Actions 两段式：`ci.yml`（单元测试 + 构建 + E2E）产出经校
 
 ## 许可
 
-见 LICENSE（待定；算法均为公开文献方法，Ruifrok 向量与统计检验实现不依赖第三方受限代码）。
+MIT（见 LICENSE）；算法均为公开文献方法，Ruifrok 向量与统计检验实现不依赖第三方受限代码。
