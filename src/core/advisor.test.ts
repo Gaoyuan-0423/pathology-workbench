@@ -3,6 +3,7 @@ import { evaluateDiagnostics, type AdvisorContext } from './advisor.ts';
 import type { AnalysisQc, AnalysisResult } from './types.ts';
 import type { GroupStatsReport } from './analysis/statistics.ts';
 import { createEmptyProject, DEFAULT_COLOC, type ProjectState } from './types.ts';
+import { t } from '../i18n.ts';
 
 function baseProject(): ProjectState {
   return {
@@ -115,6 +116,18 @@ describe('evaluateDiagnostics', () => {
     const issue = report.issues.find((issue) => issue.message.includes('低于核复染阈值'));
     expect(issue?.severity).toBe('warn');
     expect(issue?.suggestion).toContain('labeling index');
+    expect(t(issue!.message, 'en')).toBe('DAB quantification threshold (13) is below the nuclear counterstain threshold (15)');
+    expect(t(issue!.suggestion!, 'en')).not.toMatch(/[\u4e00-\u9fff]/);
+    expect(t(issue!.suggestion!, 'en')).toContain('labeling index');
+  });
+
+  it.each(['h_eosin', 'masson', 'if_coloc'] as const)('%s 不显示 DAB 特有的阈值警告', (profileId) => {
+    const result = baseResult();
+    result.thresholdUsed = 13;
+    result.nuclearThresholdUsed = 15;
+    const project = { ...baseProject(), profileId };
+    const report = evaluateDiagnostics(ctx({ project, result }));
+    expect(report.issues.some((issue) => issue.message.includes('DAB'))).toBe(false);
   });
 
   it('饱和像素过多 → 过曝警告', () => {

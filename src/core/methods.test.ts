@@ -1,9 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { generateMethodsEn, generateMethodsZh } from './methods.ts';
 import { createEmptyProject, DEFAULT_THRESHOLD, type AnalysisResult } from './types.ts';
-import { buildWorkbook } from './export.ts';
+import { buildWorkbook, metricsCsv } from './export.ts';
+import { setLanguage } from '../i18n.ts';
 import { groupBarChartSvg } from './chart.ts';
 import { compareGroups } from './analysis/statistics.ts';
+
+afterEach(() => setLanguage('zh'));
 
 const project = {
   ...createEmptyProject(),
@@ -108,6 +111,20 @@ describe('buildWorkbook', () => {
       result,
     );
     expect(book.SheetNames).toEqual(['样本指标', '统计检验', 'Methods', '项目信息']);
+  });
+});
+
+describe('metricsCsv', () => {
+  it('H-score 表头跟随语言，数值与用户名称保持不变', () => {
+    const samples = [{ id: 's1', name: '用户样本', group: '对照', imageName: '原始图.tif', addedAt: 0, metrics: result.overall }];
+    const zh = metricsCsv(samples).replace(/^\uFEFF/, '').split('\n');
+    setLanguage('en');
+    const en = metricsCsv(samples).replace(/^\uFEFF/, '').split('\n');
+    expect(zh[0]).toBe('样本,分组,图像,阳性面积,阳性核,总核,标注指数,H-score,IOD,平均OD');
+    expect(en[0]).toBe('Sample,Group,Image,Positive area,Positive nuclei,Total nuclei,Labeling index,H-score,IOD,Mean OD');
+    expect(en[1]).toBe(zh[1]);
+    expect(en[1].split(',').slice(0, 3)).toEqual(['用户样本', '对照', '原始图.tif']);
+    expect(en[1].split(',')[7]).toBe('150.0000');
   });
 });
 

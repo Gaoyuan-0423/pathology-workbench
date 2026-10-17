@@ -103,6 +103,10 @@ test('switching language retains image, ROI, calibration, numbers and user input
   const book = XLSX.read(await readFile((await downloaded.path())!), { type: 'buffer' });
   expect(book.SheetNames).toContain('Project information');
   expect(XLSX.utils.sheet_to_json(book.Sheets['Project information'], { header: 1 })).toContainEqual(['Stain preset', 'h_dab']);
+  const csvDownload = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Export CSV', exact: true }).click();
+  const csv = await readFile((await (await csvDownload).path())!, 'utf8');
+  expect(csv.replace(/^\uFEFF/, '').split('\n')[0]).toBe('Sample,Group,Image,Positive area,Positive nuclei,Total nuclei,Labeling index,H-score,IOD,Mean OD');
   await page.getByRole('button', { name: '中文', exact: true }).click();
   expect((await page.locator('.result-overall td').allTextContents()).slice(1)).toEqual(before.slice(1));
   expect(errors).toEqual([]);

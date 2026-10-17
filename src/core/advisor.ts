@@ -93,7 +93,7 @@ export function evaluateDiagnostics(ctx: AdvisorContext): DiagnosticsReport {
         suggestion: '阳性与背景在 OD 直方图上未形成双峰；建议导入未染色对照片做阈值标定，或改手动模式。',
       });
     }
-    if (result.thresholdUsed < result.nuclearThresholdUsed) {
+    if (project.profileId === 'h_dab' && result.thresholdUsed < result.nuclearThresholdUsed) {
       issues.push({
         severity: 'warn',
         category: '阈值',
