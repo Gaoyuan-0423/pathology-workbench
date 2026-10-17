@@ -37,6 +37,7 @@ const result: AnalysisResult = {
     meanOpticalDensity: 61.7,
     estimatedTotalCount: 106.3,
     densityPerMm2: 5120,
+    hScore: 150,
   },
   perRoi: [],
   thresholdUsed: 42,

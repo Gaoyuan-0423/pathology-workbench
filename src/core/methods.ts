@@ -43,6 +43,7 @@ export function generateMethodsZh(project: ProjectState, result: AnalysisResult 
       ? `像素尺寸经标定为 ${calibration.mpp} μm/px，据此换算细胞密度（个/mm²）。`
       : '未标定像素尺寸，故未输出绝对密度。',
     `整图及自定义感兴趣区域（ROI）分别输出阳性面积百分比、IOD（积分光密度）、平均 OD、阳性核数与标注指数（阳性核/总核）。`,
+    `H-score（0–300）按核级强度计：阳性核的核内平均 OD 在阳性区间 [阈值, 255] 内三等分为弱/中/强，分别计 1/2/3 分，按全部计数核（含阴性）百分比加权和。`,
   ];
   return lines.join('');
 }
@@ -94,6 +95,7 @@ export function generateMethodsEn(project: ProjectState, result: AnalysisResult 
   }
   lines.push(
     'Positive-area percentage, integrated optical density (IOD), mean OD, positive-nucleus counts and the labelling index (positive/total nuclei) were reported for whole images and user-drawn regions of interest.',
+    'An H-score (0–300) was computed per nucleus: positive nuclei were graded weak/moderate/strong by equal thirds of the positive OD interval [threshold, 255], scored 1/2/3, and the percentages of all counted nuclei (negatives included) were summed with these weights.',
   );
   return lines.join(' ');
 }

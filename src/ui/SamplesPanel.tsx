@@ -31,6 +31,7 @@ interface SamplesPanelProps {
 const METRIC_OPTIONS: MetricKey[] = [
   'positiveFraction',
   'labelingIndex',
+  'hScore',
   'integratedOpticalDensity',
   'meanOpticalDensity',
   'densityPerMm2',

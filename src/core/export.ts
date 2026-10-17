@@ -18,6 +18,8 @@ export function metricValue(metrics: RoiMetrics, key: MetricKey): number | null 
       return metrics.positiveFraction;
     case 'labelingIndex':
       return metrics.labelingIndex;
+    case 'hScore':
+      return metrics.hScore;
     case 'integratedOpticalDensity':
       return metrics.integratedOpticalDensity;
     case 'meanOpticalDensity':
@@ -44,7 +46,7 @@ export function buildWorkbook(
   const book = XLSX.utils.book_new();
 
   const metricsAoa: (string | number | null)[][] = [
-    [t('样本'), t('分组'), t('图像'), t('阳性面积'), t('阳性核'), t('总核'), t('标注指数'), t('触边核'), t('折算总数'), 'IOD', t('平均OD'), t('密度(个/mm²)')],
+    [t('样本'), t('分组'), t('图像'), t('阳性面积'), t('阳性核'), t('总核'), t('标注指数'), t('H-score'), t('触边核'), t('折算总数'), 'IOD', t('平均OD'), t('密度(个/mm²)')],
     ...samples.map((sample) => [
       sample.name,
       sample.group,
@@ -53,6 +55,7 @@ export function buildWorkbook(
       sample.metrics.positiveNuclei,
       sample.metrics.totalNuclei,
       round4(sample.metrics.labelingIndex),
+      sample.metrics.hScore === null ? null : round4(sample.metrics.hScore),
       sample.metrics.borderNuclei,
       sample.metrics.estimatedTotalCount,
       sample.metrics.integratedOpticalDensity,
@@ -166,7 +169,7 @@ function csvEscape(value: string): string {
 }
 
 export function metricsCsv(samples: SampleRecord[]): string {
-  const header = t('样本,分组,图像,阳性面积,阳性核,总核,标注指数,IOD,平均OD');
+  const header = t('样本,分组,图像,阳性面积,阳性核,总核,标注指数,H-score,IOD,平均OD');
   const rows = samples.map((sample) =>
     [
       sample.name,
@@ -176,6 +179,7 @@ export function metricsCsv(samples: SampleRecord[]): string {
       sample.metrics.positiveNuclei,
       sample.metrics.totalNuclei,
       sample.metrics.labelingIndex?.toFixed(6) ?? '',
+      sample.metrics.hScore?.toFixed(4) ?? '',
       sample.metrics.integratedOpticalDensity,
       sample.metrics.meanOpticalDensity ?? '',
     ]

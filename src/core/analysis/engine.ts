@@ -3,7 +3,7 @@
  * 无 DOM、无 Worker 依赖（node 可测），Worker 与程序化 API（core/api.ts）共用。
  */
 import { buildStainMatrix, extractStainChannel, type RgbaPixels } from '../image/color.ts';
-import { buildOverlayRgba, clipRect, computeAreaMetrics } from './metrics.ts';
+import { buildOverlayRgba, clipRect, computeAreaMetrics, hScoreFromNuclei } from './metrics.ts';
 import { computeAutoThreshold, histogram256, percentileFromHist } from './threshold.ts';
 import {
   connectedComponents,
@@ -153,6 +153,7 @@ export function analyzeStainImage(input: EngineInput): StainEngineResult {
   interface Nucleus {
     cx: number;
     cy: number;
+    meanOd: number;
     positive: boolean;
     touchesBorder: boolean;
   }
@@ -181,6 +182,7 @@ export function analyzeStainImage(input: EngineInput): StainEngineResult {
     return {
       cx: component.cx,
       cy: component.cy,
+      meanOd: meanValue,
       positive: meanValue > thresholdUsed,
       touchesBorder: component.touchesBorder,
     };
@@ -191,6 +193,10 @@ export function analyzeStainImage(input: EngineInput): StainEngineResult {
   const positiveBorder = nucleusList.reduce(
     (sum, item) => sum + (item.positive && item.touchesBorder ? 1 : 0),
     0,
+  );
+  const overallHScore = hScoreFromNuclei(
+    nucleusList.map((item) => item.meanOd),
+    thresholdUsed,
   );
   const mpp = calibration?.mpp ?? null;
   const areaMm2Safe = mpp !== null ? (width * height * mpp * mpp) / 1e6 : null;
@@ -208,6 +214,7 @@ export function analyzeStainImage(input: EngineInput): StainEngineResult {
       labelingIndex: totalSummary.count > 0 ? positiveCount / totalSummary.count : null,
       estimatedTotalCount: estimateTotal(totalSummary.count, totalSummary.borderCount),
       densityPerMm2: areaMm2Safe !== null ? totalSummary.estimatedTotal / areaMm2Safe : null,
+      hScore: overallHScore,
     },
   );
 
@@ -235,6 +242,10 @@ export function analyzeStainImage(input: EngineInput): StainEngineResult {
         labelingIndex: roiTotal > 0 ? roiPositive / roiTotal : null,
         estimatedTotalCount: roiEstimated,
         densityPerMm2: roiAreaMm2 !== null && roiAreaMm2 > 0 ? roiEstimated / roiAreaMm2 : null,
+        hScore: hScoreFromNuclei(
+          inside.map((item) => item.meanOd),
+          thresholdUsed,
+        ),
       },
     );
   });
@@ -303,6 +314,7 @@ function runColocSync(
     meanOpticalDensity: null,
     estimatedTotalCount: null,
     densityPerMm2: null,
+    hScore: null,
   };
   return { overall: metrics, coloc: colocResult, overlayRgba, warnings: [] };
 }

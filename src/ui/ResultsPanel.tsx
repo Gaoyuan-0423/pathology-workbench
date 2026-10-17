@@ -45,6 +45,7 @@ export default function ResultsPanel({ result, running, hasImage }: ResultsPanel
                 <th>{t("阳性面积")}</th>
                 <th>{t("阳性核/总核")}</th>
                 <th>{t("标注指数")}</th>
+                <th>H-score</th>
                 <th>IOD</th>
                 <th>{t("平均 OD")}</th>
               </tr>
@@ -55,6 +56,7 @@ export default function ResultsPanel({ result, running, hasImage }: ResultsPanel
                 <td>{pct(result.overall.positiveFraction)}</td>
                 <td>{result.overall.positiveNuclei}/{result.overall.totalNuclei}</td>
                 <td>{pct(result.overall.labelingIndex)}</td>
+                <td>{result.overall.hScore === null ? '—' : result.overall.hScore.toFixed(0)}</td>
                 <td>{result.overall.integratedOpticalDensity}</td>
                 <td>{result.overall.meanOpticalDensity ?? '—'}</td>
               </tr>
@@ -64,6 +66,7 @@ export default function ResultsPanel({ result, running, hasImage }: ResultsPanel
                   <td>{pct(roi.positiveFraction)}</td>
                   <td>{roi.positiveNuclei}/{roi.totalNuclei}</td>
                   <td>{pct(roi.labelingIndex)}</td>
+                  <td>{roi.hScore === null ? '—' : roi.hScore.toFixed(0)}</td>
                   <td>{roi.integratedOpticalDensity}</td>
                   <td>{roi.meanOpticalDensity ?? '—'}</td>
                 </tr>

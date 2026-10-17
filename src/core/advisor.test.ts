@@ -45,6 +45,7 @@ function baseResult(): AnalysisResult {
       meanOpticalDensity: 60,
       estimatedTotalCount: 103,
       densityPerMm2: null,
+      hScore: 120,
     },
     perRoi: [],
     thresholdUsed: 50,

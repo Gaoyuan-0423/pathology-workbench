@@ -32,6 +32,7 @@ export interface FullReport {
 const METRIC_KEYS: MetricKey[] = [
   'positiveFraction',
   'labelingIndex',
+  'hScore',
   'integratedOpticalDensity',
   'meanOpticalDensity',
   'densityPerMm2',

@@ -143,6 +143,8 @@ export interface RoiMetrics {
   estimatedTotalCount: number | null;
   /** 细胞密度（个/mm²），需 mpp 标定，否则 null */
   densityPerMm2: number | null;
+  /** H-score（0–300）：阳性核按平均 OD 三档计 1/2/3，占全部计数核百分比的加权和；无核时 null */
+  hScore: number | null;
 }
 
 /** 组间比较的一组样本值（每组 n = 每图或每 ROI 的某指标） */
@@ -155,6 +157,7 @@ export interface ValueGroup {
 export type MetricKey =
   | 'positiveFraction'
   | 'labelingIndex'
+  | 'hScore'
   | 'integratedOpticalDensity'
   | 'meanOpticalDensity'
   | 'densityPerMm2';

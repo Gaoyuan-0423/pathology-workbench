@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clipRect, computeAreaMetrics, positiveFractionOf, regionPercentile } from './metrics.ts';
+import { clipRect, computeAreaMetrics, hScoreFromNuclei, positiveFractionOf, regionPercentile } from './metrics.ts';
 
 function flatChannel(width: number, height: number, fill: (index: number) => number): Float32Array {
   const out = new Float32Array(width * height);
@@ -55,5 +55,21 @@ describe('computeAreaMetrics', () => {
 describe('positiveFractionOf', () => {
   it('空通道返回 0', () => {
     expect(positiveFractionOf(new Float32Array(0), 10)).toBe(0);
+  });
+});
+
+describe('hScoreFromNuclei', () => {
+  it('手算对照：阈值 40，OD [10,60,100,200] → 1+1+3=5/4×100=125', () => {
+    // 阳性区间 [40,255] 三等分：cut1≈111.67、cut2≈183.33；60→弱(1)、100→弱(1)、200→强(3)
+    expect(hScoreFromNuclei([10, 60, 100, 200], 40)).toBeCloseTo(125, 6);
+  });
+  it('全部低于阈值 → 0（阴性核仍计入分母）', () => {
+    expect(hScoreFromNuclei([10, 20, 39], 40)).toBe(0);
+  });
+  it('无核 → null', () => {
+    expect(hScoreFromNuclei([], 40)).toBeNull();
+  });
+  it('恰等于阈值不计分，恰落在分界归低档（阈值 30：cut1=105、cut2=180）', () => {
+    expect(hScoreFromNuclei([30, 105, 180, 181], 30)).toBeCloseTo(150, 6);
   });
 });

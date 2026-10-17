@@ -83,8 +83,28 @@ export function computeAreaMetrics(
     meanOpticalDensity: positiveCount > 0 ? Math.round((iod / positiveCount) * 100) / 100 : null,
     estimatedTotalCount: null,
     densityPerMm2: null,
+    hScore: null,
     ...extra,
   };
+}
+
+/**
+ * H-score（0–300，膜/质标记临床惯用读出）：阳性核按核内平均 OD 三档计分——
+ * 阳性区间 [threshold, 255] 三等分为弱/中/强，分别计 1/2/3 分，
+ * 占全部计数核（含阴性）百分比的加权和。无核时 null。
+ */
+export function hScoreFromNuclei(meanOds: number[], threshold: number): number | null {
+  const total = meanOds.length;
+  if (total === 0) return null;
+  const span = 255 - threshold;
+  const cut1 = threshold + span / 3;
+  const cut2 = threshold + (2 * span) / 3;
+  let score = 0;
+  for (const od of meanOds) {
+    if (od <= threshold) continue;
+    score += od <= cut1 ? 1 : od <= cut2 ? 2 : 3;
+  }
+  return (score / total) * 100;
 }
 
 /** 通道掩膜 → 紫色叠加层 RGBA（无 DOM 依赖；Worker/UI 各自包成 ImageData） */

@@ -4,6 +4,7 @@ import type { MetricKey } from './types.ts';
 export const METRIC_LABELS: Record<MetricKey, string> = {
   positiveFraction: '阳性面积',
   labelingIndex: '标注指数',
+  hScore: 'H-score',
   integratedOpticalDensity: 'IOD',
   meanOpticalDensity: '平均 OD',
   densityPerMm2: '密度 (个/mm²)',
