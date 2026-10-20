@@ -61,7 +61,7 @@ export default function BatchPanel({ disabled, batch, onBatch, onCancel }: Batch
         )}
       </div>
       <p className="panel-note">
-        {t("按当前预设与参数逐张分析，整图指标写入样本库（不替换当前画布、不保留像素）。分组以上方输入为准。")}</p>
+        {t("按当前预设与参数逐张分析，整图指标写入样本库，保留原文件与分析设置，不替换当前画布。分组以上方输入为准。")}</p>
       {batch && batch.total > 0 && (
         <div className="batch-progress">
           <div className="batch-bar">

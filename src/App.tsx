@@ -1,3 +1,5 @@
+import { connectProjectAdapter } from './project-archive';
+import { analysisSettings, emptySources, exportPathologyProject, importPathologyProject, savedAnalysis, type LocalProject, type ProjectView } from './project-io';
 import { tError, t, useLanguage, setLanguage, withLanguage } from './i18n.ts';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { get, set } from 'idb-keyval';
@@ -19,7 +21,6 @@ import {
   STAIN_PROFILES,
   type AnalysisResult,
   type ColocConfig,
-  type ProjectState,
   type Roi,
   type MetricKey,
   type SegmentationConfig,
@@ -43,11 +44,13 @@ import UploadPanel from './ui/UploadPanel.tsx';
 
 const STORAGE_KEY = 'pathology-workbench:project:v1';
 const suiteHost = window.location.hostname.toLowerCase();
-const isWispLab = suiteHost === 'wisplab.top' || suiteHost.endsWith('.wisplab.top');
+const isDesktop = window.location.protocol === 'app:' || (window as Window & { wispLabDesktop?: { isDesktop?: boolean } }).wispLabDesktop?.isDesktop === true;
+const platformHome = isDesktop ? 'app://wisplab/' : 'https://wisplab.top/';
+const isWispLab = isDesktop || suiteHost === 'wisplab.top' || suiteHost.endsWith('.wisplab.top');
 const suiteLinks = {
-  wb: isWispLab ? 'https://wb.wisplab.top/' : 'https://gaoyuan-0423.github.io/blot-workbench/',
-  pathology: isWispLab ? 'https://pathology.wisplab.top/' : './',
-  pcr: isWispLab ? 'https://pcr.wisplab.top/' : 'https://gaoyuan-0423.github.io/pcr-workbench/',
+  wb: isDesktop ? 'app://wisplab/wb/' : isWispLab ? 'https://wb.wisplab.top/' : 'https://gaoyuan-0423.github.io/blot-workbench/',
+  pathology: isDesktop ? 'app://wisplab/pathology/' : isWispLab ? 'https://pathology.wisplab.top/' : './',
+  pcr: isDesktop ? 'app://wisplab/pcr/' : isWispLab ? 'https://pcr.wisplab.top/' : 'https://gaoyuan-0423.github.io/pcr-workbench/',
 };
 
 type Status = { kind: 'idle' | 'busy' | 'error' | 'ok'; message: string };
@@ -96,7 +99,7 @@ function LineCalibration({
 
 export default function App() {
   const language = useLanguage();
-  const [project, setProject] = useState<ProjectState>(createEmptyProject);
+  const [project, setProject] = useState<LocalProject>(createEmptyProject);
   const [loaded, setLoaded] = useState(false);
   const [status, setStatus] = useState<Status>({ kind: 'idle', message: '' });
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
@@ -115,12 +118,23 @@ export default function App() {
   const [aiNonce, setAiNonce] = useState(0);
   const [statsMetric, setStatsMetric] = useState<MetricKey>('positiveFraction');
   const lastStainProfile = useRef<StainProfileId>('h_eosin');
+  const userLoadedRef = useRef(false);
+  const [projectGaps, setProjectGaps] = useState<string[]>([]);
+  const [modelReload, setModelReload] = useState<ProjectView | null>(null);
+  const analyzedProjectRef = useRef<LocalProject | null>(null);
+  const snapshotRef = useRef<{ project: LocalProject; analysis: AnalysisResult | null; view: ProjectView } | null>(null);
+  snapshotRef.current = { project, analysis: analyzedProjectRef.current && ['pixels', 'rois', 'profileId', 'threshold', 'segmentation', 'calibration', 'coloc', 'stainOverrides'].every((key) => analyzedProjectRef.current![key as keyof LocalProject] === project[key as keyof LocalProject]) ? analysis : null, view: { showOverlay, statsMetric, lastStainProfile: lastStainProfile.current, modelName: aiModelName ?? modelReload?.modelName ?? null, modelRequested: aiUseState || Boolean(modelReload?.modelRequested) } };
+
 
   useEffect(() => {
     void (async () => {
       try {
-        const saved = await get<ProjectState>(STORAGE_KEY);
+        const saved = await get<LocalProject>(STORAGE_KEY);
+        if (userLoadedRef.current) return;
         if (saved?.version === 1 && (saved.pixels instanceof ImageData || saved.pixels === null)) {
+          if (saved.restoredView) {
+            setShowOverlay(saved.restoredView.showOverlay); setStatsMetric(saved.restoredView.statsMetric); setModelReload(saved.restoredView);
+          }
           if (sceneForProfile(saved.profileId) === 'stain') lastStainProfile.current = saved.profileId;
           setProject({
             ...createEmptyProject(),
@@ -141,10 +155,10 @@ export default function App() {
     if (!loaded) return;
     window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => {
-      void set(STORAGE_KEY, project);
+      void set(STORAGE_KEY, { ...project, restoredView: snapshotRef.current?.view });
     }, 600);
     return () => window.clearTimeout(saveTimer.current);
-  }, [project, loaded]);
+  }, [project, loaded, showOverlay, statsMetric, aiModelName, aiUseState]);
 
   const { pixels, rois, profileId, threshold, segmentation, calibration, coloc } = project;
   const stainOverride = project.stainOverrides[profileId] ?? null;
@@ -168,6 +182,7 @@ export default function App() {
         if (!active) return;
         if (result.aiModelLoaded) lastLoadedModelRef.current = result.aiModelLoaded;
         setAiActive(result.aiUsed);
+        analyzedProjectRef.current = project;
         setAnalysis(result);
         setAnalyzing(false);
       });
@@ -179,6 +194,7 @@ export default function App() {
   }, [pixels, rois, profileId, threshold, segmentation, calibration, coloc, stainOverride, aiNonce]);
 
   const handleFile = useCallback(async (file: File) => {
+    userLoadedRef.current = true;
     setStatus({ kind: 'busy', message: `正在解码 ${file.name}…` });
     try {
       const decoded = await decodeImageFile(file);
@@ -197,6 +213,8 @@ export default function App() {
         },
         pixels: decoded.pixels,
         rois: [],
+        sources: { ...(prev.sources ?? emptySources()), main: file },
+        restoredAnalysis: null,
       }));
       setStatus({
         kind: 'ok',
@@ -226,6 +244,7 @@ export default function App() {
         );
         setProject((prev) => ({
           ...prev,
+          sources: { ...(prev.sources ?? emptySources()), control: file },
           threshold: {
             ...prev.threshold,
             controlThreshold,
@@ -248,6 +267,37 @@ export default function App() {
 
   const batchCancelRef = useRef(false);
   const [batch, setBatch] = useState<BatchState | null>(null);
+  const busyRef = useRef(false);
+  busyRef.current = status.kind === 'busy' || calibrating || Boolean(batch?.running);
+  useEffect(() => {
+    let mounted = true;
+    const dispose = connectProjectAdapter({
+    tool: 'pathology',
+    exportProject: async () => {
+      if (busyRef.current) throw new Error(t('请等待当前导入或批处理完成'));
+      const state = snapshotRef.current!;
+      const result = await exportPathologyProject(state.project, state.view, state.analysis);
+      return { blob: result.blob, name: `${(state.project.image?.name ?? 'Pathology project').replace(/\.[^.]+$/, '')}.wisplab.zip`, format: 'wisplab-pathology-v1.zip', summaryTranslations: { zh: result.completeness.join('\n') || '包含原图、ROI、样本及设置', en: result.completeness.join('\n') || 'Includes source images, ROIs, samples and settings' }, summary: result.completeness.length ? result.completeness.join('\n') : '包含原图、ROI、样本及设置 / Includes source images, ROIs, samples and settings' };
+    },
+    importProject: async (blob, options) => {
+      const before = snapshotRef.current!;
+      const current = () => mounted && options?.isCurrent?.() !== false && before.project === snapshotRef.current?.project && JSON.stringify(before.view) === JSON.stringify(snapshotRef.current?.view);
+      const result = await importPathologyProject(blob);
+      if (!current()) throw new DOMException('Cancelled', 'AbortError');
+      if (busyRef.current) throw new Error(t('请等待当前导入或批处理完成'));
+      if (!window.confirm(t('打开此版本会替换当前工作内容，是否继续？') + (result.completeness.length ? '\n\n' + result.completeness.join('\n') : ''))) throw new DOMException('Cancelled', 'AbortError');
+      if (!current()) throw new DOMException('Cancelled', 'AbortError');
+      userLoadedRef.current = true;
+      aiModelRef.current = null; lastLoadedModelRef.current = null; useAiRef.current = false;
+      setAiModelName(null); setAiUseState(false); setAiActive(false); setModelReload(result.view);
+      lastStainProfile.current = result.view.lastStainProfile;
+      setProject({ ...result.project, restoredView: result.view }); setAnalysis(null); setShowOverlay(result.view.showOverlay); setStatsMetric(result.view.statsMetric);
+      setDrawMode('none'); setPendingLinePx(null); setProjectGaps(result.completeness); setLoaded(true); setAiNonce((n) => n + 1);
+      setStatus({ kind: 'ok', message: '项目已恢复；历史缺失附件不会自动补全。' });
+    },
+    });
+    return () => { mounted = false; dispose(); };
+  }, []);
 
   const runBatch = useCallback(
     async (files: File[], group: string) => {
@@ -260,6 +310,8 @@ export default function App() {
         coloc: project.coloc,
         stainOverride: project.stainOverrides[project.profileId] ?? null,
       };
+      const sampleSettings = { ...analysisSettings(project), rois: [] };
+      const controlSource = project.sources?.control ?? null;
       const errors: string[] = [];
       let done = 0;
       setBatch({ running: true, total: files.length, done: 0, current: files[0]?.name ?? '', errors, cancelled: false });
@@ -290,12 +342,14 @@ export default function App() {
             },
           );
           if (result.aiModelLoaded) lastLoadedModelRef.current = result.aiModelLoaded;
+          const sampleId = crypto.randomUUID();
           setProject((prev) => ({
             ...prev,
+            sources: { ...(prev.sources ?? emptySources()), samples: { ...prev.sources?.samples, [sampleId]: { image: file, control: controlSource, settings: sampleSettings, analysis: savedAnalysis(result), modelName: result.aiModelLoaded } } },
             samples: [
               ...prev.samples,
               {
-                id: crypto.randomUUID(),
+                id: sampleId,
                 name: file.name.replace(/\.[^.]+$/, ''),
                 group,
                 imageName: file.name,
@@ -316,10 +370,11 @@ export default function App() {
         message: `批处理完成：成功 ${done - errors.length}，失败 ${errors.length}`,
       });
     },
-    [project.profileId, project.threshold, project.segmentation, project.calibration, project.coloc],
+    [project],
   );
 
   const clearImage = useCallback(() => {
+    userLoadedRef.current = true; setProjectGaps([]); setModelReload(null);
     setProject(createEmptyProject());
     setDrawMode('none');
     setPendingLinePx(null);
@@ -364,12 +419,14 @@ export default function App() {
 
   const addSample = useCallback((group: string) => {
     if (!analysis || !project.image) return;
+    const sampleId = crypto.randomUUID();
     setProject((prev) => ({
       ...prev,
+      sources: { ...(prev.sources ?? emptySources()), samples: { ...prev.sources?.samples, [sampleId]: { image: prev.sources?.main ?? null, control: prev.sources?.control ?? null, settings: analysisSettings(prev), analysis: savedAnalysis(analysis), modelName: analysis.aiModelLoaded } } },
       samples: [
         ...prev.samples,
         {
-          id: crypto.randomUUID(),
+          id: sampleId,
           name: `S${prev.samples.length + 1} ${project.image!.name}`,
           group,
           imageName: project.image!.name,
@@ -444,13 +501,20 @@ export default function App() {
   }, []);
   return (
     <div className="app">
+      <div className="wisplab-platform-bar">
+        <a className="wisplab-platform-brand" href={withLanguage(platformHome)}>
+          {t("WispLab实验数据分析平台")}
+        </a>
+      </div>
+      {projectGaps.length > 0 && <section className="panel" role="status"><strong>{t('项目完整性说明')}</strong><ul>{projectGaps.map((gap, index) => <li key={index}>{gap}</li>)}</ul></section>}
+      {modelReload?.modelName && <section className="panel" role="status">{t('项目使用过 AI 模型，请重新载入本机模型后复核结果。')} {modelReload.modelName}</section>}
       <header className="app-header">
         <a className="app-brand" href={withLanguage("./")} aria-label={t("Pathology Workbench 病理工作台")}>
           <span className="brand-symbol" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="m8 3 6 6-4 4-6-6zM7 10l-2 2m7-1 2 2M9 19h10M5 21h16M14 5a8 8 0 0 1 4 14M7 16h5" strokeLinecap="round" strokeLinejoin="round"/></svg></span>
           <span><h1>{t("病理工作台")}</h1><span className="app-subtitle">Pathology Workbench</span></span>
         </a>
         <nav className="suite-nav" aria-label={t("科研工作台导航")}>
-          {isWispLab && <a href={withLanguage("https://wisplab.top/")}>{t("总首页")}</a>}
+          {isWispLab && <a href={withLanguage(platformHome)}>{t("总首页")}</a>}
           <a href={withLanguage(suiteLinks.wb)}>WB <span>{t("条带分析")}</span></a>
           <a href={withLanguage(suiteLinks.pathology)} aria-current="page">{t("病理 ")}<span>{t("图像定量")}</span></a>
           <a href={withLanguage(suiteLinks.pcr)}>PCR <span>{t("表达分析")}</span></a>
@@ -460,7 +524,7 @@ export default function App() {
             <button type="button" lang="zh-CN" aria-pressed={language === 'zh'} onClick={() => setLanguage('zh')}>中文</button>
             <button type="button" lang="en" aria-pressed={language === 'en'} onClick={() => setLanguage('en')}>EN</button>
           </div>
-          <span className="local-badge"><span aria-hidden="true"/>{t("本地处理 · 图像不上传")}</span>
+          <span className="local-badge"><span aria-hidden="true"/>{t("本机分析 · 云端保存可选")}</span>
           {status.message && (
             <span className={`status status-${status.kind}`} role="status">{tError(status.message)}</span>
           )}
@@ -571,6 +635,7 @@ export default function App() {
               onModelFile={(file) => {
                 void file.arrayBuffer().then((bytes) => {
                   aiModelRef.current = { name: file.name, bytes };
+                  setModelReload(null);
                   lastLoadedModelRef.current = null; // 强制下次请求装载
                   setAiModelName(file.name);
                   useAiRef.current = true;

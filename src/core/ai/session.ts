@@ -3,6 +3,7 @@
  * 会话按模型文件名缓存；同一会话跨请求复用。
  */
 import { inferPlaneSize, toModelTensor } from './prepost.ts';
+import { ortAssetRoot } from './asset-root.ts';
 
 interface OrtTensor {
   data: Float32Array;
@@ -37,7 +38,7 @@ export async function ensureSession(
   loading = (async () => {
     const ort = (await import('onnxruntime-web')) as unknown as OrtModule;
     // wasm/mjs 由 vite-plugin-static-copy 复制到 <base>ort/（离线，不走 CDN）
-    ort.env.wasm.wasmPaths = import.meta.env.BASE_URL + 'ort/';
+    ort.env.wasm.wasmPaths = ortAssetRoot(self.location.href);
     const session = await ort.InferenceSession.create(new Uint8Array(bytes), {
       executionProviders: ['wasm'],
     });
