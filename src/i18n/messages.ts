@@ -91,7 +91,7 @@ export const messages: Record<string, string> = {
   '应用': 'Apply', '已导入': 'Imported', 'Pathology Workbench 病理工作台': 'Pathology Workbench',
   '病理工作台': 'Pathology Workbench', '科研工作台导航': 'Research workbench navigation', '总首页': 'Home', '条带分析': 'Band analysis',
   '病理': 'Pathology', '图像定量': 'Image quantification', '表达分析': 'Expression analysis',
-  '本机分析 · 云端保存可选': 'Local analysis · Optional cloud saves', '图像与定量结果': 'Image and quantification results',
+  '本机分析 · 本地项目保存': 'Local analysis · Local project files', '图像与定量结果': 'Image and quantification results',
   '拖入 RGB 荧光图像，开始共定位分析': 'Drop an RGB fluorescence image for colocalization',
   '支持病理染色、免疫组化与免疫荧光图像': 'Histology, immunohistochemistry and immunofluorescence images',
   '滚轮缩放 · 拖动平移': 'Scroll to zoom · Drag to pan', '分析设置': 'Analysis settings', '调整后自动计算': 'Updates automatically',

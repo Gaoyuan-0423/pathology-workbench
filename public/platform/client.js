@@ -1,6 +1,12 @@
 // Shared WispLab client. Generated copies are distributed by sync-platform.mjs.
 export const API = "https://wisplab.top";
 export const TOKEN_KEY = "wisplab.account.v1";
+const localCapabilities = () => ({
+  version: 1,
+  accounts: true,
+  registration: "closed",
+  projectStorage: "local",
+});
 function browserStorage(name) {
   try {
     return globalThis[name];
@@ -51,6 +57,8 @@ export class CloudClient {
     this.auth = null;
     this.remember = false;
     this.generation = 0;
+    this.capabilities = localCapabilities();
+    this.capabilityRequest = 0;
     // A local acceptance-test API must never receive a production login token.
     this.storageKey =
       this.base === API ? TOKEN_KEY : TOKEN_KEY + "@" + this.base;
@@ -116,10 +124,50 @@ export class CloudClient {
     )
       throw new CloudError(401, "account_changed");
   }
+  requireCloud() {
+    if (this.capabilities.projectStorage !== "cloud")
+      throw new CloudError(403, "cloud_disabled");
+  }
+  async loadCapabilities() {
+    const request = ++this.capabilityRequest;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    let next = localCapabilities();
+    try {
+      const value = await this.request("/api/wisplab/capabilities", {
+        token: null,
+        signal: controller.signal,
+      });
+      if (
+        value?.version === 1 &&
+        value.accounts === true &&
+        ["open", "closed"].includes(value.registration) &&
+        ["local", "cloud"].includes(value.projectStorage)
+      )
+        next = {
+          version: 1,
+          accounts: true,
+          registration: value.registration,
+          projectStorage: value.projectStorage,
+        };
+    } catch {
+      // Unknown/offline capability is local-only; authentication identity is unchanged.
+    } finally {
+      clearTimeout(timeout);
+    }
+    if (request === this.capabilityRequest) this.capabilities = next;
+    return this.capabilities;
+  }
   async request(
     path,
     { method = "GET", body, signal, token = this.auth?.token } = {},
   ) {
+    if (
+      /^\/api\/(?:collections\/cloud_|files(?:\/|$)|wisplab\/(?:projects(?:\/|$)|usage(?:\?|$)))/.test(
+        path,
+      )
+    )
+      this.requireCloud();
     const headers = { Accept: "application/json" };
     if (token) headers.Authorization = `Bearer ${token}`;
     if (body && !(body instanceof FormData)) {
@@ -243,6 +291,7 @@ export class CloudClient {
     });
   }
   async upload(project, snapshot, appVersion) {
+    this.requireCloud();
     const context = this.context();
     this.id(project.id);
     const body = new FormData();
@@ -266,6 +315,7 @@ export class CloudClient {
     return result;
   }
   async download(snapshot, signal) {
+    this.requireCloud();
     const context = this.context();
     this.id(snapshot.id);
     if (
@@ -336,6 +386,7 @@ export class CloudClient {
     )
       throw new CloudError(400, "integrity");
     this.assertContext(context);
+    this.requireCloud();
     return blob;
   }
 }

@@ -524,7 +524,7 @@ export default function App() {
             <button type="button" lang="zh-CN" aria-pressed={language === 'zh'} onClick={() => setLanguage('zh')}>中文</button>
             <button type="button" lang="en" aria-pressed={language === 'en'} onClick={() => setLanguage('en')}>EN</button>
           </div>
-          <span className="local-badge"><span aria-hidden="true"/>{t("本机分析 · 云端保存可选")}</span>
+          <span className="local-badge"><span aria-hidden="true"/>{t("本机分析 · 本地项目保存")}</span>
           {status.message && (
             <span className={`status status-${status.kind}`} role="status">{tError(status.message)}</span>
           )}

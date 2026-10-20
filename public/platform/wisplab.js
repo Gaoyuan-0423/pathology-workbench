@@ -36,6 +36,9 @@ let historyProject = null,
   pendingSnapshot = null,
   restoreFocus = null;
 let renderedLanguage = document.documentElement.lang;
+let capabilitiesLoaded = false,
+  cloudLinkUnavailable = false;
+const cloudEnabled = () => client.capabilities.projectStorage === "cloud";
 const disabledControls = new Map();
 const tools = {
   "wb-single": ["单排条带", "Single strip"],
@@ -177,6 +180,11 @@ function errorMessage(e) {
       "账号已变更，操作已取消；当前分析保留。",
       "The account changed. The operation was cancelled and local analysis is retained.",
     );
+  if (e.code === "cloud_disabled")
+    return t(
+      "此部署未开放云项目保存或同步。请使用本地项目文件。",
+      "Cloud project storage and sync are unavailable on this deployment. Use local project files.",
+    );
   if (e.status === 401)
     return t(
       "登录已过期，请重新登录；本机分析已保留。",
@@ -243,7 +251,7 @@ async function task(action) {
     if (
       ended &&
       generation !== startedGeneration &&
-      ["projects", "history"].includes(view)
+      ["projects", "history", "account", "local"].includes(view)
     )
       open(view, false);
     else refreshDialogLanguage();
@@ -291,9 +299,11 @@ function renderBar() {
   controls.append(
     button(
       client.auth
-        ? t("云端项目", "Cloud projects")
+        ? cloudEnabled()
+          ? t("云端项目", "Cloud projects")
+          : t("账号", "Account")
         : t("登录 / 注册", "Sign in / Register"),
-      () => open(client.auth ? "projects" : "login"),
+      () => open(client.auth ? "account" : "login"),
     ),
   );
   bar.append(controls);
@@ -308,6 +318,7 @@ function updateRoute(next) {
 function close() {
   if (busy) return;
   view = "";
+  cloudLinkUnavailable = false;
   pendingSnapshot = null;
   modal?.close();
   modal?.remove();
@@ -318,8 +329,51 @@ function close() {
   history.replaceState(history.state, "", u);
   restoreFocus?.focus?.();
 }
-function open(next, route = true) {
+function open(next, route = true, checked = false) {
   if (busy) return;
+  if (
+    !checked &&
+    ["login", "register", "account", "projects", "linked"].includes(next) &&
+    (route || !capabilitiesLoaded)
+  ) {
+    open("loading", false, true);
+    task(async () => {
+      await client.loadCapabilities();
+      capabilitiesLoaded = true;
+      if (!cloudEnabled()) binding = null;
+      if (client.auth && next === "account" && !cloudEnabled()) {
+        try {
+          await client.refresh();
+        } catch (error) {
+          if (error.status !== 401) {
+            /* Keep the local account view usable offline. */
+          }
+        }
+      }
+      transition(() => open(next, route, true));
+    });
+    return;
+  }
+  if (next !== "loading" && !cloudEnabled() && deepProjectId()) {
+    cloudLinkUnavailable = true;
+    const url = new URL(location.href);
+    url.searchParams.delete("cloudProject");
+    history.replaceState(history.state, "", url);
+  }
+  if (next === "account" && cloudEnabled()) next = "projects";
+  if (
+    ["projects", "history", "linked", "save"].includes(next) &&
+    !cloudEnabled()
+  ) {
+    cloudLinkUnavailable = true;
+    next = client.auth ? "account" : "login";
+    const url = new URL(location.href);
+    url.searchParams.delete("cloudProject");
+    history.replaceState(history.state, "", url);
+  }
+  if (next === "account" && !client.auth) next = "login";
+  if (next === "register" && client.capabilities.registration !== "open")
+    next = "login";
   restoreFocus = document.activeElement;
   if (next === "save" && !pendingSnapshot) next = "projects";
   view = next;
@@ -363,7 +417,10 @@ function open(next, route = true) {
   });
   modal.showModal();
   if (route) updateRoute(next);
-  if (next === "login" || next === "register") renderAuth(next);
+  if (next === "loading")
+    heading(t("正在读取账号服务…", "Checking account service…"));
+  else if (next === "login" || next === "register") renderAuth(next);
+  else if (next === "account") renderAccount();
   else if (next === "local") renderLocal();
   else if (next === "projects") {
     renderProjectsFrame();
@@ -375,6 +432,8 @@ function open(next, route = true) {
     heading(t("正在打开云端项目", "Opening cloud project"));
     task(() => resolveLinkedProject(deepProjectId()));
   } else if (next === "save") renderSaveConfirmation(pendingSnapshot);
+  if (cloudLinkUnavailable && ["account", "login", "local"].includes(next))
+    msg(errorMessage({ code: "cloud_disabled" }));
 }
 function heading(text, description) {
   content.append(node("h1", text, { id: "wl-heading" }));
@@ -394,8 +453,8 @@ function renderAuth(mode) {
       ? t("创建 WispLab 账号", "Create your WispLab account")
       : t("欢迎回到 WispLab", "Welcome to WispLab"),
     t(
-      "把同一份实验带到另一台电脑，接着分析。",
-      "Take your experiment to another computer and continue where you left off.",
+      "账号可选。实验在本机分析，项目可通过本地文件保存和恢复。",
+      "Accounts are optional. Analyze on your device and save or restore projects with local files.",
     ),
   );
   const split = node("div", null, { class: "auth-grid" }),
@@ -407,10 +466,10 @@ function renderAuth(mode) {
   );
   for (const [zh, en] of [
     [
-      "按需保存原文件与分析设置",
-      "Save original files and analysis settings when you choose",
+      "下载包含原文件与设置的本地项目",
+      "Download local projects with original files and settings",
     ],
-    ["查看云端历史版本", "Review cloud version history"],
+    ["打开项目文件继续分析", "Open a project file to continue analysis"],
     [
       "游客使用与离线分析始终保留",
       "Guest access and offline analysis remain available",
@@ -421,8 +480,8 @@ function renderAuth(mode) {
     node(
       "p",
       t(
-        "云同步由你主动发起。项目仅对你的账号开放；服务器管理员可访问存储数据。",
-        "You choose when to upload. Projects are private to your account; the server administrator can access stored data.",
+        "登录不会上传实验数据。更换电脑时，可自行传输本地项目文件并打开。",
+        "Signing in does not upload experimental data. Move a local project file yourself to continue on another computer.",
       ),
       { class: "fine" },
     ),
@@ -501,19 +560,40 @@ function renderAuth(mode) {
       { type: "submit" },
     ),
   );
-  form.append(
-    button(
-      register
-        ? t("已有账号？前往登录", "Already registered? Sign in")
-        : t("还没有账号？创建账号", "New here? Create an account"),
-      () => open(register ? "login" : "register"),
-      true,
-    ),
-  );
+  if (register || client.capabilities.registration === "open")
+    form.append(
+      button(
+        register
+          ? t("已有账号？前往登录", "Already registered? Sign in")
+          : t("还没有账号？创建账号", "New here? Create an account"),
+        () => open(register ? "login" : "register"),
+        true,
+      ),
+    );
   form.append(button(t("以游客身份继续", "Continue as guest"), close, true));
+  if (client.capabilities.registration !== "open")
+    form.append(
+      node(
+        "p",
+        t(
+          "当前暂不开放注册，已有账号仍可登录。",
+          "Registration is currently unavailable. Existing accounts can still sign in.",
+        ),
+        { class: "fine" },
+      ),
+    );
   form.onsubmit = (e) => {
     e.preventDefault();
     task(async () => {
+      await client.loadCapabilities();
+      capabilitiesLoaded = true;
+      if (register && client.capabilities.registration !== "open") {
+        msg(
+          t("当前暂不开放注册。", "Registration is currently unavailable."),
+          "error",
+        );
+        return;
+      }
       const name = username.value.trim();
       if (
         register &&
@@ -536,7 +616,7 @@ function renderAuth(mode) {
       binding = null;
       transition(() => {
         if (deepProjectId()) openLinkedProject();
-        else open("projects");
+        else open("account", true, true);
       });
     });
   };
@@ -607,34 +687,27 @@ function renderLocal() {
 function fieldDescription(text) {
   return node("p", text, { class: "intro" });
 }
-function renderProjectsFrame() {
+function renderAccount() {
   heading(
-    t("云端项目", "Cloud projects"),
+    t("WispLab 账号", "WispLab account"),
     t(
-      "只有点击保存才会上传。每次保存增加一个版本，保留原版本。",
-      "Files upload only when you save. Every save adds a version and keeps earlier versions.",
+      "当前部署仅提供账号与本地项目。实验数据留在本机，不提供云上传或跨电脑自动同步。",
+      "This deployment provides accounts and local projects only. Experimental data stays on this device; cloud uploads and automatic cross-computer sync are unavailable.",
     ),
+  );
+  content.append(
+    node("p", t("已登录：", "Signed in as: ") + client.auth.record.username, {
+      class: "identity",
+    }),
   );
   const actions = node("div", null, { class: "actions" });
-  if (adapter)
-    actions.append(
-      button(t("保存当前分析到云端", "Save current analysis to cloud"), () =>
-        task(prepareSave),
-      ),
-    );
   actions.append(
-    button(
-      archived
-        ? t("查看活动项目", "Show active projects")
-        : t("查看已归档", "Show archived"),
-      () => {
-        archived = !archived;
-        page = 1;
-        task(loadProjects);
-      },
-      true,
-    ),
+    button(t("本地项目", "Local project"), () => open("local"), true),
   );
+  appendAccountActions(actions);
+  content.append(actions);
+}
+function appendAccountActions(actions) {
   actions.append(
     button(
       t("退出登录", "Sign out"),
@@ -683,6 +756,36 @@ function renderProjectsFrame() {
       true,
     ),
   );
+}
+function renderProjectsFrame() {
+  heading(
+    t("云端项目", "Cloud projects"),
+    t(
+      "只有点击保存才会上传。每次保存增加一个版本，保留原版本。",
+      "Files upload only when you save. Every save adds a version and keeps earlier versions.",
+    ),
+  );
+  const actions = node("div", null, { class: "actions" });
+  if (adapter)
+    actions.append(
+      button(t("保存当前分析到云端", "Save current analysis to cloud"), () =>
+        task(prepareSave),
+      ),
+    );
+  actions.append(
+    button(
+      archived
+        ? t("查看活动项目", "Show active projects")
+        : t("查看已归档", "Show archived"),
+      () => {
+        archived = !archived;
+        page = 1;
+        task(loadProjects);
+      },
+      true,
+    ),
+  );
+  appendAccountActions(actions);
   content.append(actions, node("div", null, { id: "wl-list" }));
 }
 function pager(parent, data, change) {
@@ -1019,14 +1122,16 @@ window.WispLab = Object.freeze({
     binding = null;
     generation++;
     renderBar();
-    if (["projects", "history"].includes(view) && !busy) open(view, false);
+    if (["projects", "history", "account", "local"].includes(view) && !busy)
+      open(view, false);
     return () => {
       if (adapter === next) {
         adapter = null;
         binding = null;
         generation++;
         renderBar();
-        if (["projects", "history"].includes(view) && !busy) open(view, false);
+        if (["projects", "history", "account", "local"].includes(view) && !busy)
+          open(view, false);
       }
     };
   },
@@ -1045,7 +1150,7 @@ window.addEventListener("popstate", () => {
     return;
   }
   const mode = new URL(location.href).searchParams.get("account");
-  if (["login", "register", "projects", "local"].includes(mode))
+  if (["login", "register", "projects", "account", "local"].includes(mode))
     open(mode === "projects" && !client.auth ? "login" : mode, false);
   else close();
 });
@@ -1053,7 +1158,9 @@ renderBar();
 window.dispatchEvent(new Event("wisplab:ready"));
 const initial = new URL(location.href).searchParams.get("account");
 if (deepProjectId()) openLinkedProject();
-else if (["login", "register", "projects", "local"].includes(initial))
+else if (
+  ["login", "register", "projects", "account", "local"].includes(initial)
+)
   open(initial === "projects" && !client.auth ? "login" : initial, false);
 // The portal and desktop use the same source, with local tool links in the desktop shell.
 if (desktop)
