@@ -25,6 +25,12 @@ body {
 
 .app { display: flex; flex-direction: column; height: 100dvh; min-height: 700px; }
 
+.wisplab-platform-bar { flex-shrink: 0; padding: 8px 26px; border-bottom: 1px solid var(--border); background: var(--accent-soft); }
+.wisplab-platform-brand { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; color: var(--accent); font-size: 12px; line-height: 1.5; font-weight: 650; text-decoration: none; overflow-wrap: anywhere; }
+.wisplab-platform-brand::before { content: ''; flex: 0 0 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.wisplab-platform-brand:hover { color: var(--accent-hover); text-decoration: underline; text-underline-offset: 3px; }
+@media (max-width: 540px) { .wisplab-platform-bar { padding: 8px 16px; } }
+
 button, input, select { font: inherit; }
 button, input, select, summary, a { -webkit-tap-highlight-color: transparent; }
 button { min-height: 34px; border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; color: var(--text); background: var(--panel); cursor: pointer; transition: background .15s, border-color .15s, box-shadow .15s; }

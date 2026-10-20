@@ -35,6 +35,15 @@ export function setLanguage(next: Language) {
   updateDocument();
   listeners.forEach((listener) => listener());
 }
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (event) => {
+    if (event.key === LANGUAGE_KEY && (event.newValue === 'zh' || event.newValue === 'en') && event.newValue !== language) setLanguage(event.newValue);
+  });
+  window.addEventListener('popstate', () => {
+    const requested = new URLSearchParams(window.location.search).get('lang');
+    if ((requested === 'zh' || requested === 'en') && requested !== language) setLanguage(requested);
+  });
+}
 export function useLanguage() {
   return useSyncExternalStore((listener) => { listeners.add(listener); return () => { listeners.delete(listener); }; }, getLanguage, () => 'zh' as Language);
 }

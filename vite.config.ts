@@ -1,4 +1,5 @@
 /// <reference types="vitest/config" />
+import { execFileSync } from "node:child_process";
 import { copyFileSync, mkdirSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import react from '@vitejs/plugin-react'
@@ -29,7 +30,11 @@ const copyStaticAssets: Plugin = {
 // https://vite.dev/config/
 export default defineConfig({
   base: './',
-  plugins: [react(), copyStaticAssets],
+  plugins: [{ name: "wisplab-build-identity", transformIndexHtml() {
+    const sha = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+    const dirty = execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], { encoding: "utf8" }).trim();
+    return [{ tag: "meta", attrs: { name: "wisplab-build", content: "pathology:" + sha + (dirty ? ":local-changes" : "") }, injectTo: "head" as const }];
+  }}, react(), copyStaticAssets],
   test: {
     include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     environment: 'node',

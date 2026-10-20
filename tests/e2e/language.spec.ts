@@ -32,13 +32,22 @@ test('language URL priority, persistence, navigation and blocked storage', async
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Choose a workflow', exact: true })).toBeVisible();
   const blocked = await page.context().newPage();
+  const blockedErrors: string[] = [];
+  blocked.on('pageerror', error => blockedErrors.push(error.message));
   await blocked.addInitScript(() => {
     Object.defineProperty(window, 'localStorage', { get() { throw new Error('Storage disabled'); } });
   });
   await blocked.goto('/?lang=en');
   await expect(blocked.getByRole('heading', { name: 'Choose a workflow', exact: true })).toBeVisible();
+  await expect(blocked.locator('wisplab-platform').getByRole('link', {
+    name: 'WispLab Experimental Data Analysis Platform', exact: true,
+  })).toBeVisible();
   await blocked.getByRole('button', { name: '中文', exact: true }).click();
   await expect(blocked.locator('html')).toHaveAttribute('lang', 'zh-CN');
+  await expect(blocked.locator('wisplab-platform').getByRole('link', {
+    name: 'WispLab实验数据分析平台', exact: true,
+  })).toBeVisible();
+  expect(blockedErrors).toEqual([]);
   await blocked.close();
 });
 

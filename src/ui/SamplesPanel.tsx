@@ -103,7 +103,7 @@ export default function SamplesPanel({
           {t("加入样本")}</button>
       </div>
       <p className="panel-note">
-        {t("每导入一张图并完成分析后加入样本库（只保存指标，不保存像素）；比较不同处理组的图像请分别加入并标注分组。")}</p>
+        {t("每张图分析后可加入样本库，保存指标、原文件和分析设置；历史条目若缺原图会明确提示。比较处理组请分别加入并标注分组。")}</p>
 
       {project.samples.length > 0 && (
         <ul className="roi-list">
