@@ -503,7 +503,7 @@ export default function App() {
     <div className="app">
       <div className="wisplab-platform-bar">
         <a className="wisplab-platform-brand" href={withLanguage(platformHome)}>
-          {t("WispLab实验数据分析平台")}
+          {t("WispLab实验数据分析")}
         </a>
       </div>
       {projectGaps.length > 0 && <section className="panel" role="status"><strong>{t('项目完整性说明')}</strong><ul>{projectGaps.map((gap, index) => <li key={index}>{gap}</li>)}</ul></section>}
