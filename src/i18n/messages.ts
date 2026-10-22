@@ -9,7 +9,7 @@ export const messages: Record<string, string> = {
   '按当前预设与参数逐张分析，整图指标写入样本库，保留原文件与分析设置，不替换当前画布。分组以上方输入为准。': 'Analyze each image using the current preset and parameters. Save metrics, original files and analysis settings without replacing the current canvas. Use the group specified above.',
   '每张图分析后可加入样本库，保存指标、原文件和分析设置；历史条目若缺原图会明确提示。比较处理组请分别加入并标注分组。': 'Add each analyzed image to the sample library with its metrics, original file and analysis settings. Missing originals in historical entries are reported. Label groups for comparisons.',
   '本地处理 · 可选项目同步': 'Local processing · optional project sync',
-  'WispLab实验数据分析平台': 'WispLab Experimental Data Analysis Platform',
+  'WispLab实验数据分析': 'WispLab Experimental Data Analysis',
   '图像工作区': 'IMAGE WORKSPACE',
   '问题': 'Errors', '警告': 'Warnings', '提示': 'Notes', '通过': 'Passed',
   '一键体检': 'Quality checks', '分': 'points',

@@ -21,7 +21,7 @@ export function getLanguage(): Language { return language; }
 function updateDocument() {
   if (typeof document === 'undefined') return;
   document.documentElement.lang = language === 'en' ? 'en' : 'zh-CN';
-  document.title = language === 'en' ? 'Pathology Workbench' : 'Pathology Workbench · 病理工作台';
+  document.title = language === 'en' ? 'WispLab Experimental Data Analysis · Pathology Workbench' : 'WispLab实验数据分析 · 病理工作台';
 }
 updateDocument();
 export function setLanguage(next: Language) {
