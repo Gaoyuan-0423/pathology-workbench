@@ -34,9 +34,20 @@ export interface EngineInput {
   stainOverride: [Vec3, Vec3] | null;
   /** AI 核掩膜（长度 = w*h，0/1）；提供时替代苏木精 Otsu 掩膜 */
   aiMask?: Uint8Array | null;
+  /** Export working-image nucleus centroids for independent review / 导出工作图核中心供独立复核。 */
+  includeNuclei?: boolean;
 }
 
 export type EngineQc = import('../types.ts').AnalysisQc;
+
+/** Centroids and classification, not instance masks / 核中心与分类，不是实例轮廓。 */
+export interface NucleusMeasurement {
+  cx: number;
+  cy: number;
+  meanOd: number;
+  positive: boolean;
+  touchesBorder: boolean;
+}
 
 export interface StainEngineResult {
   overall: RoiMetrics;
@@ -47,6 +58,7 @@ export interface StainEngineResult {
   overlayRgba: Uint8ClampedArray;
   warnings: string[];
   qc: EngineQc;
+  nuclei?: NucleusMeasurement[];
 }
 
 function estimateTotal(count: number, borderCount: number): number {
@@ -150,14 +162,7 @@ export function analyzeStainImage(input: EngineInput): StainEngineResult {
   }
 
   // 5. 每个核的阳性判定：核内平均定量通道 OD > 阈值
-  interface Nucleus {
-    cx: number;
-    cy: number;
-    meanOd: number;
-    positive: boolean;
-    touchesBorder: boolean;
-  }
-  const nucleusList: Nucleus[] = nuclei.map((component) => {
+  const nucleusList: NucleusMeasurement[] = nuclei.map((component) => {
     let seed = Math.round(component.cy) * width + Math.round(component.cx);
     if (nuclearMask[seed] === 0) {
       const cx = Math.round(component.cx);
@@ -252,6 +257,7 @@ export function analyzeStainImage(input: EngineInput): StainEngineResult {
 
   return {
     overall,
+    ...(input.includeNuclei ? { nuclei: nucleusList } : {}),
     perRoi,
     thresholdUsed,
     nuclearThresholdUsed,
