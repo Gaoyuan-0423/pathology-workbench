@@ -2,8 +2,9 @@
  * 诊断顾问：对分析配置与结果做体检，输出分级问题与优化方向。
  * 规则全部可解释（无黑盒打分），每条 suggestion 给出可操作动作。
  */
-import type { AnalysisResult, ProjectState, RoiMetrics } from './types.ts';
+import type { AnalysisResult, IfUndefinedReason, ProjectState, RoiMetrics } from './types.ts';
 import type { AnalysisQc } from './types.ts';
+import { ifSampleStatistics } from './if-statistics.ts';
 
 export type Severity = 'error' | 'warn' | 'info' | 'ok';
 
@@ -33,10 +34,22 @@ export interface AdvisorContext {
   statsReport: import('./analysis/statistics.ts').GroupStatsReport | null;
 }
 
+const IF_UNDEFINED_MESSAGES: Record<IfUndefinedReason, string> = {
+  pearson_all_insufficient_pixels: '全像素 Pearson：有效像素少于 2 个。',
+  pearson_all_zero_variance: '全像素 Pearson：至少一个通道为零方差。',
+  pearson_masked_insufficient_pixels: '掩膜 Pearson：并集内像素少于 2 个。',
+  pearson_masked_zero_variance: '掩膜 Pearson：至少一个通道为零方差。',
+  manders_m1_zero_denominator: 'Manders M1：区域 A 总强度为零。',
+  manders_m2_zero_denominator: 'Manders M2：区域 B 总强度为零。',
+};
+
 export function evaluateDiagnostics(ctx: AdvisorContext): DiagnosticsReport {
   const issues: DiagnosticIssue[] = [];
   const { project, result, qc, statsReport } = ctx;
   const isColoc = project.profileId === 'if_coloc';
+  // External stain reports cannot authorize IF inference.
+  const ifStats = isColoc ? ifSampleStatistics(project.ifSamples ?? [], project.ifExperimentalDesign) : null;
+  const activeStatsReport = ifStats?.report ?? statsReport;
 
   // ── 图像质量 ──
   if (project.image) {
@@ -46,10 +59,12 @@ export function evaluateDiagnostics(ctx: AdvisorContext): DiagnosticsReport {
         severity: 'warn',
         category: '图像质量',
         message: `工作图最长边仅 ${longest} px`,
-        suggestion: '分辨率过低会限制核分割精度；建议使用 ≥1200 px 的原始图像。',
+        suggestion: isColoc
+          ? '工作图像素较少可能限制空间细节；请核对原始采集分辨率和 ROI 内有效像素数，放大图像不会增加独立信息。'
+          : '分辨率过低会限制核分割精度；建议使用 ≥1200 px 的原始图像。',
       });
     }
-    if (qc && qc.saturatedFraction > 0.05) {
+    if (!isColoc && qc && qc.saturatedFraction > 0.05) {
       issues.push({
         severity: 'warn',
         category: '图像质量',
@@ -57,7 +72,7 @@ export function evaluateDiagnostics(ctx: AdvisorContext): DiagnosticsReport {
         suggestion: '高光饱和丢失光密度信息；建议降低采集曝光或扫描亮度后重新导出。',
       });
     }
-    if (qc && qc.tissueFraction < 0.08) {
+    if (!isColoc && qc && qc.tissueFraction < 0.08) {
       issues.push({
         severity: 'info',
         category: '图像质量',
@@ -161,50 +176,73 @@ export function evaluateDiagnostics(ctx: AdvisorContext): DiagnosticsReport {
   }
 
   // ── IF 共定位 ──
-  if (isColoc && result?.coloc) {
-    const { pearsonMasked, pearsonAll } = result.coloc;
-    if (Math.abs(pearsonAll) > 0.3 && Math.sign(pearsonAll) !== Math.sign(pearsonMasked || 0)) {
+  if (isColoc && result) {
+    const canonical = result.ifAnalysis;
+    const measurement = canonical?.overall ?? result.coloc;
+    if (canonical) {
+      const undefinedReasons = new Set([canonical.overall, ...canonical.perRoi].flatMap((region) => region.undefinedReasons));
+      for (const reason of undefinedReasons) issues.push({ severity: 'info', category: '工作流', message: IF_UNDEFINED_MESSAGES[reason],
+        suggestion: '请在 IF 区域结果中核对对应区域与原因；未定义系数保留为空，不解释为零相关或弱共定位。' });
+    } else if (measurement && [measurement.pearsonAll, measurement.pearsonMasked, measurement.mandersM1, measurement.mandersM2].some((value) => value === null || !Number.isFinite(value))) {
+      issues.push({ severity: 'info', category: '工作流', message: '旧格式 IF 结果含不可计算系数',
+        suggestion: '旧结果未记录完整区域计数和未定义原因；请载入原图与配置复算，不把缺失值解释为零。' });
+    }
+    const pearsonAll = measurement?.pearsonAll;
+    const pearsonMasked = measurement?.pearsonMasked;
+    if (typeof pearsonAll === 'number' && Number.isFinite(pearsonAll) && typeof pearsonMasked === 'number' && Number.isFinite(pearsonMasked)
+      && Math.abs(pearsonAll) > 0.3 && pearsonAll * pearsonMasked < 0) {
       issues.push({
         severity: 'warn',
         category: '阈值',
         message: '掩膜 Pearson 与全像素 Pearson 符号相反',
-        suggestion: '背景像素主导了全像素相关性；请以掩膜 Pearson 为准，并检查各通道阈值是否合理。',
+        suggestion: '两种 Pearson 使用不同像素集合；符号差异不能证明背景主导。请核对通道、并集掩膜和实验对照，并按预声明口径报告。',
       });
     }
-    if (Math.abs(pearsonMasked) < 0.2) {
+    if (typeof pearsonMasked === 'number' && Number.isFinite(pearsonMasked) && Math.abs(pearsonMasked) < 0.2) {
       issues.push({
         severity: 'info',
-        category: '阈值',
-        message: `掩膜 Pearson 仅 ${pearsonMasked.toFixed(3)}，共定位很弱`,
-        suggestion: '若预期强共定位：降低两通道阈值会引入噪声，升高会聚焦高表达区——建议扫动阈值观察变化，或检查通道分配是否正确。',
+        category: '统计',
+        message: `掩膜 Pearson 为 ${pearsonMasked.toFixed(3)}，所选像素的线性相关接近零`,
+        suggestion: '该系数不能单独判断生物学共定位。请结合实验对照核对通道和掩膜，按预先确定的规则设置阈值并记录敏感性分析。',
       });
     }
   }
 
   // ── 统计 ──
-  if (statsReport) {
-    if (statsReport.ns.some((n) => n < 3)) {
+  if (isColoc && (project.image || result || (project.ifSamples?.length ?? 0) > 0)) {
+    issues.push({ severity: 'info', category: '工作流',
+      message: ifStats!.inference ? 'IF 组间检验基于已确认的独立单位' : 'IF 当前仅提供描述统计',
+      suggestion: ifStats!.inference
+        ? '按所选指标与区域规则汇总至独立单位后检验；ROI、像素和记录数量不是 nBio。确认设计只记录实验者声明，不证明抽样独立性或科学结论有效。'
+        : '保存原始区域结果并核对 IF 指标、所选 ROI、来源、视野、切片、独立单位及分组；设计未确认、存在冲突或可用单位不足时不提供 IF 组间推断。' });
+    for (const issue of ifStats!.aggregation.issues) {
+      issues.push({ severity: ifStats!.aggregation.designStatus === 'invalid' ? 'warn' : 'info', category: '统计', message: issue.message });
+    }
+    if (ifStats!.report.recommendation) issues.push({ severity: 'info', category: '统计', message: ifStats!.report.recommendation });
+  }
+  if (activeStatsReport?.designStatus === 'confirmed') {
+    if (activeStatsReport.ns.some((n) => n < 3)) {
       issues.push({
         severity: 'warn',
         category: '统计',
-        message: `存在样本数 <3 的组（${statsReport.groupNames.map((name, i) => `${name}:n=${statsReport.ns[i]}`).join('，')}）`,
-        suggestion: '每组建议 ≥5 张图像（非参数检验 ≥8 更稳）；样本过少时检验效力不足，结论仅作探索。',
+        message: `存在独立单位数 <3 的组（${activeStatsReport.groupNames.map((name, i) => `${name}:nBio=${activeStatsReport.ns[i]}`).join('，')}）`,
+        suggestion: '独立单位较少时估计可能不稳定；样本量应结合预期效应、单位间变异、实验设计和目标检验效力确定，增加同一单位的图像不能替代独立重复。',
       });
     }
-    if (statsReport.leveneP !== null && statsReport.leveneP < 0.05 && statsReport.omnibusParametric) {
+    if (activeStatsReport.leveneP !== null && activeStatsReport.leveneP < 0.05) {
       issues.push({
         severity: 'info',
         category: '统计',
         message: '组间方差不齐（Brown–Forsythe p<0.05）',
-        suggestion: '以 Welch t / ANOVA（稳健）结果为准，并在论文中报告 Levene 检验。',
+        suggestion: '两组 Welch t 允许不等方差；普通 ANOVA 与 Dunnett 不属于异方差稳健检验，当前未实现 Welch ANOVA。请按预声明方案解释并报告方差检查。',
       });
     }
-  } else if (project.samples.length === 0 && project.pixels) {
+  } else if (!isColoc && project.samples.length === 0 && project.pixels) {
     issues.push({
       severity: 'info',
       category: '统计',
       message: '样本库为空',
-      suggestion: '批处理导入或逐张"加入样本"并标注分组后，可做组间统计检验。',
+      suggestion: '保存记录后需核对独立单位、切片、视野及分组并确认设计；只有满足单位级数据条件时才提供组间检验，图像条目数不等于生物学样本量。',
     });
   }
 

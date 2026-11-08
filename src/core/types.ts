@@ -53,6 +53,54 @@ export interface ColocResult {
   backgroundB: number;
 }
 
+export type IfUndefinedReason =
+  | 'pearson_all_insufficient_pixels'
+  | 'pearson_all_zero_variance'
+  | 'pearson_masked_insufficient_pixels'
+  | 'pearson_masked_zero_variance'
+  | 'manders_m1_zero_denominator'
+  | 'manders_m2_zero_denominator';
+
+/** IF 专用区域结果。rect 是工作图中实际使用的整数半开区间。 */
+export interface IfRegionResult {
+  roiId: string | null;
+  roiName: string;
+  rect: { x: number; y: number; w: number; h: number };
+  pixelCount: number;
+  positivePixelsA: number;
+  positivePixelsB: number;
+  unionPixels: number;
+  intersectionPixels: number;
+  channelA: 0 | 1 | 2;
+  channelB: 0 | 1 | 2;
+  thresholdA: number;
+  thresholdB: number;
+  backgroundA: number;
+  backgroundB: number;
+  /** 整个区域的背景扣除强度 Pearson；不足两点或无方差为 null。 */
+  pearsonAll: number | null;
+  /** 区域内 A 或 B 严格超阈值的并集掩膜 Pearson。 */
+  pearsonMasked: number | null;
+  /** sum(A where B > thresholdB) / sum(A across the entire region). */
+  mandersM1: number | null;
+  /** sum(B where A > thresholdA) / sum(B across the entire region). */
+  mandersM2: number | null;
+  sumA: number;
+  sumB: number;
+  sumAInBPositive: number;
+  sumBInAPositive: number;
+  undefinedReasons: IfUndefinedReason[];
+}
+
+export interface IfAnalysisResult {
+  schemaVersion: 'wisplab.if-colocalization/v1';
+  normalizationScope: 'whole_image';
+  imageWidth: number;
+  imageHeight: number;
+  overall: IfRegionResult;
+  perRoi: IfRegionResult[];
+}
+
 /** IF 共定位配置（profileId = 'if_coloc' 时生效） */
 export interface ColocConfig {
   /** 通道 0=R 1=G 2=B */
@@ -147,7 +195,7 @@ export interface RoiMetrics {
   hScore: number | null;
 }
 
-/** 组间比较的一组样本值（每组 n = 每图或每 ROI 的某指标） */
+/** 一组描述值；仅经实验单位汇总确认后，values 才代表独立单位。 */
 export interface ValueGroup {
   name: string;
   values: number[];
@@ -170,6 +218,86 @@ export interface SampleRecord {
   imageName: string;
   addedAt: number;
   metrics: RoiMetrics;
+  /** 原图字节的稳定身份；历史记录可能缺失，不从文件名推断。 */
+  sourceId?: string;
+  /** 记录产生时的分析预设；未知历史记录不能参与确认后的推断。 */
+  profileId?: StainProfileId;
+  /** 排除旧版本或其他预设记录的统计用途，仍保留历史记录和导出。 */
+  excludedFromStatistics?: boolean;
+}
+
+/** IF 保存整图及矩形 ROI；仅在专用设计确认后汇总成实验单位。 */
+export interface IfSampleRecord {
+  id: string;
+  name: string;
+  group: string;
+  imageName: string;
+  addedAt: number;
+  sourceId: string;
+  profileId: 'if_coloc';
+  image: LoadedImage;
+  config: ColocConfig;
+  analysis: IfAnalysisResult;
+  excludedFromStatistics?: boolean;
+}
+
+export type PathologyDesignStatus = 'unconfirmed' | 'invalid' | 'unsupported' | 'confirmed';
+
+export interface PathologyExperimentalAssignment {
+  sampleId: string;
+  sourceId: string;
+  unitId: string;
+  sectionId: string;
+  fieldId: string;
+  group: string;
+}
+
+export interface PathologyExperimentalDesign {
+  kind: 'independent' | 'paired' | 'repeated';
+  confirmed: boolean;
+  controlGroup: string;
+  /** 去重后切片内视野等权，再单位内切片等权；组内单位等权。 */
+  aggregation: 'equal_sections';
+  assignments: PathologyExperimentalAssignment[];
+}
+
+export interface PathologyDesignIssue {
+  code: string;
+  message: string;
+  sampleIds?: string[];
+}
+
+export interface PathologySectionSummary {
+  sectionId: string;
+  value: number | null;
+  nFields: number;
+  sampleIds: string[];
+  sourceIds: string[];
+}
+
+export interface PathologyUnitSummary {
+  unitId: string;
+  group: string;
+  value: number | null;
+  nSections: number;
+  nFields: number;
+  sampleIds: string[];
+  sourceIds: string[];
+  sections: PathologySectionSummary[];
+}
+
+export interface ExperimentalUnitAggregation {
+  designStatus: PathologyDesignStatus;
+  issues: PathologyDesignIssue[];
+  metric: MetricKey;
+  measurementLevel: 'record' | 'biological_unit';
+  aggregation: 'equal_sections' | null;
+  groups: ValueGroup[];
+  units: PathologyUnitSummary[];
+  /** 重复视野的原始记录 ID；不代表增加独立样本。 */
+  duplicateFieldGroups: string[][];
+  includedSampleIds: string[];
+  excludedSampleIds: string[];
 }
 
 export interface ProjectState {
@@ -186,6 +314,9 @@ export interface ProjectState {
   stainOverrides: Partial<Record<StainProfileId, [Vec3, Vec3]>>;
   rois: Roi[];
   samples: SampleRecord[];
+  ifSamples?: IfSampleRecord[];
+  ifExperimentalDesign?: import('./if-statistics.ts').IfExperimentalDesign;
+  experimentalDesign?: PathologyExperimentalDesign;
 }
 
 /** 引擎随分析产出的质检指标（诊断顾问消费） */
@@ -217,12 +348,20 @@ export interface AnalysisResult {
   overlay: ImageData | null;
   /** 仅 if_coloc 模式非空 */
   coloc: ColocResult | null;
+  /** IF 的规范描述结果；旧归档可能缺失，染色分析为 null。 */
+  ifAnalysis?: IfAnalysisResult | null;
   /** 质检指标（染色预设分析；IF 模式为 null） */
   qc: AnalysisQc | null;
   /** 本次核分割是否使用了 AI 概率图 */
   aiUsed: boolean;
-  /** Worker 当前装载的 AI 模型名（供客户端判断是否需要重传字节） */
+  /** 本次实际使用的 AI 模型名；未使用 AI 时为空 */
   aiModelLoaded: string | null;
+  /** Content SHA-256 of the model actually used; optional for legacy archives. */
+  aiModelId?: string | null;
+  /** Whether this request asked for AI, including an explicitly reported fallback. */
+  aiRequested?: boolean;
+  /** Requested content identity, retained even when AI falls back to Otsu. */
+  aiRequestedModelId?: string | null;
   warnings: string[];
 }
 

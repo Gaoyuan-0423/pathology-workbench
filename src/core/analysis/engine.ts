@@ -11,7 +11,7 @@ import {
   meanChannelOverComponent,
   summarizeComponents,
 } from './segment.ts';
-import { computeColocalization, buildColocOverlayRgba } from './colocalize.ts';
+import { computeColocalizationRegions, buildColocOverlayRgba } from './colocalize.ts';
 import { getStainProfile } from '../types.ts';
 import type {
   Calibration,
@@ -281,8 +281,10 @@ export function analyzeStainImage(input: EngineInput): StainEngineResult {
 // ── IF 共定位（转发 colocalize.ts，保持引擎单一入口） ──
 
 export interface ColocEngineResult {
+  /** Legacy staining-shaped placeholder; IF consumers must use ifAnalysis. */
   overall: RoiMetrics;
   coloc: import('./colocalize.ts').ColocResult;
+  ifAnalysis: import('../types.ts').IfAnalysisResult;
   overlayRgba: Uint8ClampedArray;
   warnings: string[];
 }
@@ -290,22 +292,18 @@ export interface ColocEngineResult {
 export function analyzeColocImage(
   pixels: RgbaPixels,
   colocConfig: import('../types.ts').ColocConfig,
+  rois: Roi[] = [],
 ): ColocEngineResult {
   // 延迟 import 保持模块图简单（colocalize.ts 无副作用）
-  return runColocSync(pixels, colocConfig);
+  return runColocSync(pixels, colocConfig, rois);
 }
 
 function runColocSync(
   pixels: RgbaPixels,
   colocConfig: import('../types.ts').ColocConfig,
+  rois: Roi[],
 ): ColocEngineResult {
-  const colocResult = computeColocalization(pixels, colocConfig);
-  const chA = channelOf(pixels, colocConfig.channelA);
-  const chB = channelOf(pixels, colocConfig.channelB);
-  for (let i = 0; i < chA.length; i += 1) {
-    chA[i] = Math.max(0, chA[i] - colocResult.backgroundA);
-    chB[i] = Math.max(0, chB[i] - colocResult.backgroundB);
-  }
+  const { coloc: colocResult, ifAnalysis, chA, chB } = computeColocalizationRegions(pixels, colocConfig, rois);
   const overlayRgba = buildColocOverlayRgba(chA, chB, colocResult.thresholdA, colocResult.thresholdB);
   const metrics: RoiMetrics = {
     roiId: null,
@@ -322,15 +320,7 @@ function runColocSync(
     densityPerMm2: null,
     hScore: null,
   };
-  return { overall: metrics, coloc: colocResult, overlayRgba, warnings: [] };
-}
-
-function channelOf(pixels: RgbaPixels, channel: 0 | 1 | 2): Float32Array {
-  const out = new Float32Array(pixels.width * pixels.height);
-  for (let i = 0, p = 0; i < out.length; i += 1, p += 4) {
-    out[i] = pixels.data[p + channel];
-  }
-  return out;
+  return { overall: metrics, coloc: colocResult, ifAnalysis, overlayRgba, warnings: [] };
 }
 
 function fillNuclei(base: RoiMetrics, nuclei: Partial<RoiMetrics>): RoiMetrics {

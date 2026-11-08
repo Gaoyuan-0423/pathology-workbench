@@ -15,13 +15,17 @@ export interface BarChartOptions {
 export function groupBarChartSvg(report: GroupStatsReport, options: BarChartOptions): string {
   const width = options.width ?? 560;
   const height = options.height ?? 360;
-  const margin = { top: 40, right: 24, bottom: 64, left: 72 };
+  const comparisons = report.inferenceStatus === 'available' ? report.pairwise.filter((row) =>
+    row.method === report.pairwiseSource && row.groupB === report.controlGroup && !!row.groupA
+    && report.groupNames.includes(row.groupA) && Number.isFinite(row.adjustedP)).slice(0, 4) : [];
+  const margin = { top: 48 + comparisons.length * 18, right: 24, bottom: 84, left: 72 };
   const plotW = width - margin.left - margin.right;
   const plotH = height - margin.top - margin.bottom;
 
   const means = report.means;
-  const sds = report.sds.map((value) => (Number.isFinite(value) ? value : 0));
-  const maxY = Math.max(1e-9, ...means.map((m, i) => m + sds[i])) * 1.25;
+  const sds = report.sds;
+  const maxY = Math.max(1e-9, ...means.map((m, i) => m + (Number.isFinite(sds[i]) ? sds[i] : 0)).filter(Number.isFinite)) * 1.25;
+  const nLabel = report.designStatus === 'confirmed' ? 'nBio' : 'nRecords';
   const bandWidth = plotW / Math.max(1, report.groupNames.length);
   const barWidth = bandWidth * 0.55;
 
@@ -30,30 +34,29 @@ export function groupBarChartSvg(report: GroupStatsReport, options: BarChartOpti
   const bars = report.groupNames
     .map((name, index) => {
       const x = margin.left + index * bandWidth + (bandWidth - barWidth) / 2;
-      const yTop = yScale(means[index] + sds[index]);
+      if (!Number.isFinite(means[index])) return `<text x="${(x + barWidth / 2).toFixed(1)}" y="${height - margin.bottom + 18}" text-anchor="middle" font-size="12">${escapeXml(name)} (${nLabel}=0; ${escapeXml(t('无有效值'))})</text>`;
+      const hasSd = report.ns[index] >= 2 && Number.isFinite(sds[index]);
+      const yTop = yScale(means[index] + (hasSd ? sds[index] : 0));
       const yMean = yScale(means[index]);
-      const yBottom = yScale(Math.max(0, means[index] - sds[index]));
+      const yBottom = yScale(Math.max(0, means[index] - (hasSd ? sds[index] : 0)));
       const cap = 8;
       return `
     <rect x="${x.toFixed(1)}" y="${yMean.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${Math.max(0, margin.top + plotH - yMean).toFixed(1)}" fill="${index === 0 ? '#94a3b8' : '#7c3aed'}" stroke="#334155" stroke-width="1"/>
-    <line x1="${(x + barWidth / 2).toFixed(1)}" y1="${yTop.toFixed(1)}" x2="${(x + barWidth / 2).toFixed(1)}" y2="${yBottom.toFixed(1)}" stroke="#334155" stroke-width="1.4"/>
+    ${hasSd ? `<line data-errorbar="sd" x1="${(x + barWidth / 2).toFixed(1)}" y1="${yTop.toFixed(1)}" x2="${(x + barWidth / 2).toFixed(1)}" y2="${yBottom.toFixed(1)}" stroke="#334155" stroke-width="1.4"/>
     <line x1="${(x + barWidth / 2 - cap / 2).toFixed(1)}" y1="${yTop.toFixed(1)}" x2="${(x + barWidth / 2 + cap / 2).toFixed(1)}" y2="${yTop.toFixed(1)}" stroke="#334155" stroke-width="1.4"/>
-    <line x1="${(x + barWidth / 2 - cap / 2).toFixed(1)}" y1="${yBottom.toFixed(1)}" x2="${(x + barWidth / 2 + cap / 2).toFixed(1)}" y2="${yBottom.toFixed(1)}" stroke="#334155" stroke-width="1.4"/>
-    <text x="${(x + barWidth / 2).toFixed(1)}" y="${(height - margin.bottom + 18).toFixed(1)}" text-anchor="middle" font-size="12" fill="#1e293b">${escapeXml(name)} (n=${report.ns[index]})</text>`;
+    <line x1="${(x + barWidth / 2 - cap / 2).toFixed(1)}" y1="${yBottom.toFixed(1)}" x2="${(x + barWidth / 2 + cap / 2).toFixed(1)}" y2="${yBottom.toFixed(1)}" stroke="#334155" stroke-width="1.4"/>` : ''}
+    <text x="${(x + barWidth / 2).toFixed(1)}" y="${(height - margin.bottom + 18).toFixed(1)}" text-anchor="middle" font-size="12" fill="#1e293b">${escapeXml(name)} (${nLabel}=${report.ns[index]})</text>`;
     })
     .join('');
 
   // 显著性标注：从 pairwise 中取 vs 首组的比较
-  const brackets = report.pairwise
-    .map((row, index) => ({ row, index }))
-    .filter(({ row }) => row.label.includes(`vs ${report.groupNames[0]}`) || row.label.endsWith(`vs ${report.groupNames[0]}`))
-    .slice(0, 4)
-    .map(({ row, index }, slot) => {
-      const targetIndex = index + 1;
-      if (targetIndex >= report.groupNames.length) return '';
-      const x1 = margin.left + slot * 0 + margin.left + bandWidth * targetIndex + bandWidth / 2;
+  const brackets = comparisons
+    .map((row, slot) => {
+      const targetIndex = report.groupNames.indexOf(row.groupA!);
+      const controlIndex = report.groupNames.indexOf(row.groupB!);
+      const x1 = margin.left + bandWidth * targetIndex + bandWidth / 2;
       const y = margin.top - 10 - slot * 18;
-      const leftX = margin.left + bandWidth * 0 + bandWidth / 2;
+      const leftX = margin.left + bandWidth * controlIndex + bandWidth / 2;
       const stars = significanceStars(row.adjustedP);
       return `
     <line x1="${leftX.toFixed(1)}" y1="${y.toFixed(1)}" x2="${x1.toFixed(1)}" y2="${y.toFixed(1)}" stroke="#1e293b" stroke-width="1"/>
@@ -78,7 +81,8 @@ export function groupBarChartSvg(report: GroupStatsReport, options: BarChartOpti
   <line x1="${margin.left}" y1="${(margin.top + plotH).toFixed(1)}" x2="${(margin.left + plotW).toFixed(1)}" y2="${(margin.top + plotH).toFixed(1)}" stroke="#334155" stroke-width="1.2"/>
   ${bars}
   ${brackets}
-  <text x="14" y="${(margin.top + plotH / 2).toFixed(1)}" font-size="12" fill="#334155" transform="rotate(-90 14 ${(margin.top + plotH / 2).toFixed(1)})" text-anchor="middle">${escapeXml(options.yLabel)}${t("（均值 ± SD）")}</text>
+  <text x="14" y="${(margin.top + plotH / 2).toFixed(1)}" font-size="12" fill="#334155" transform="rotate(-90 14 ${(margin.top + plotH / 2).toFixed(1)})" text-anchor="middle">${escapeXml(options.yLabel)}${t(report.designStatus === 'confirmed' ? '（单位均值 ± SD）' : '（均值 ± SD）')}</text>
+  ${report.designStatus === 'confirmed' ? `<text x="${width / 2}" y="${height - 14}" text-anchor="middle" font-size="10">${escapeXml(t('nBio 为独立单位数；少于 2 个有效单位时不绘制 SD。'))}</text>` : ''}
 </svg>`;
 }
 

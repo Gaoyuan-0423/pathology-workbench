@@ -55,6 +55,27 @@ const result: AnalysisResult = {
 };
 
 describe('generateMethodsZh / En', () => {
+  it('withholds completed Methods while current analysis is unavailable', () => {
+    expect(generateMethodsZh(project, null)).toContain('尚无有效分析结果');
+    expect(generateMethodsEn(project, null)).toContain('No valid analysis result');
+    expect(generateMethodsEn(project, null)).not.toContain('effective threshold');
+  });
+  it('records the actual AI identity or explicitly disclosed Otsu fallback in both languages', () => {
+    const ai = { ...result, aiUsed: true, aiRequested: true, aiModelLoaded: 'nuclei.onnx', aiModelId: 'abc123' };
+    expect(generateMethodsZh(project, ai)).toContain('内容 SHA-256：abc123');
+    expect(generateMethodsEn(project, ai)).toContain('content SHA-256: abc123');
+    expect(generateMethodsEn(project, ai)).not.toContain('Nuclei were segmented from the haematoxylin channel by per-image Otsu');
+    expect(generateMethodsZh(project, { ...result, aiRequested: true })).toContain('Otsu 回落');
+    expect(generateMethodsEn(project, { ...result, aiRequested: true })).toContain('Otsu fallback');
+  });
+  it('describes current IF channels and thresholds without claiming the stain pipeline was run', () => {
+    const ifProject = { ...project, profileId: 'if_coloc' as const, coloc: { ...project.coloc, channelA: 2 as const, channelB: 0 as const } };
+    const ifResult = { ...result, coloc: { channelA: 2, channelB: 0, backgroundA: 3, backgroundB: 4, thresholdA: 42, thresholdB: 55,
+      pearsonAll: 0.3, pearsonMasked: 0.4, mandersM1: 0.5, mandersM2: 0.6 } };
+    expect(generateMethodsZh(ifProject, ifResult)).toContain('B/R');
+    expect(generateMethodsEn(ifProject, ifResult)).toContain('effective A/B thresholds 42/55');
+    expect(generateMethodsEn(ifProject, ifResult)).not.toContain('DAB');
+  });
   it('包含关键参数（去卷积、阈值、门控、标定）', () => {
     const zh = generateMethodsZh(project, result);
     expect(zh).toContain('Ruifrok');
@@ -90,7 +111,7 @@ describe('generateMethodsZh / En', () => {
 });
 
 describe('buildWorkbook', () => {
-  it('生成四个工作表且不抛错', () => {
+  it('exports explicit design and unit sheets without inferring from a supplied legacy report', () => {
     const report = compareGroups([
       { name: '对照', values: [0.1, 0.12, 0.11, 0.13] },
       { name: '处理', values: [0.2, 0.22, 0.21, 0.23] },
@@ -110,7 +131,7 @@ describe('buildWorkbook', () => {
       project,
       result,
     );
-    expect(book.SheetNames).toEqual(['样本指标', '统计检验', 'Methods', '项目信息']);
+    expect(book.SheetNames).toEqual(['样本指标', '实验单位', '切片汇总', '实验设计', '分组描述', 'Methods', '项目信息']);
   });
 });
 
@@ -120,16 +141,16 @@ describe('metricsCsv', () => {
     const zh = metricsCsv(samples).replace(/^\uFEFF/, '').split('\n');
     setLanguage('en');
     const en = metricsCsv(samples).replace(/^\uFEFF/, '').split('\n');
-    expect(zh[0]).toBe('样本,分组,图像,阳性面积,阳性核,总核,标注指数,H-score,IOD,平均OD');
-    expect(en[0]).toBe('Sample,Group,Image,Positive area,Positive nuclei,Total nuclei,Labeling index,H-score,IOD,Mean OD');
+    expect(zh[0].split(',').slice(0, 10)).toEqual('样本,分组,图像,阳性面积,阳性核,总核,标注指数,H-score,IOD,平均OD'.split(','));
+    expect(en[0].split(',').slice(0, 10)).toEqual('Sample,Group,Image,Positive area,Positive nuclei,Total nuclei,Labeling index,H-score,IOD,Mean OD'.split(','));
     expect(en[1]).toBe(zh[1]);
     expect(en[1].split(',').slice(0, 3)).toEqual(['用户样本', '对照', '原始图.tif']);
-    expect(en[1].split(',')[7]).toBe('150.0000');
+    expect(en[1].split(',')[7]).toBe('150');
   });
 });
 
 describe('groupBarChartSvg', () => {
-  it('生成合法 SVG，含组名与显著性星标', () => {
+  it('生成合法描述 SVG，含组名与记录数', () => {
     const report = compareGroups([
       { name: '对照', values: [0.1, 0.12, 0.11, 0.13, 0.1, 0.14] },
       { name: '处理', values: [0.3, 0.32, 0.31, 0.33, 0.3, 0.34] },
@@ -138,6 +159,6 @@ describe('groupBarChartSvg', () => {
     expect(svg).toContain('<svg');
     expect(svg).toContain('对照');
     expect(svg).toContain('处理');
-    expect(svg).toContain('n=6');
+    expect(svg).toContain('nRecords=6');
   });
 });

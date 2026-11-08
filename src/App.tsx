@@ -1,13 +1,14 @@
 import { connectProjectAdapter } from './project-archive';
 import { analysisSettings, emptySources, exportPathologyProject, importPathologyProject, savedAnalysis, type LocalProject, type ProjectView } from './project-io';
 import { tError, t, useLanguage, setLanguage, withLanguage } from './i18n.ts';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { get, set } from 'idb-keyval';
 import { runAnalysis } from './core/analysis-client.ts';
-import { compareGroups } from './core/analysis/statistics.ts';
+import { analysisIdentity, currentAnalysis, finishAnalysis, modelContentId, sameAnalysisIdentity, startAnalysis, type AnalysisRun } from './core/analysis-validity.ts';
+import { sourceContentId } from './core/source-identity.ts';
 import { evaluateDiagnostics } from './core/advisor.ts';
 import { generateMethodsEn, generateMethodsZh } from './core/methods.ts';
-import { groupsFromSamples } from './core/api.ts';
+import { ifReportData, sampleStatistics } from './core/api.ts';
 import { controlThresholdFromChannel } from './core/analysis/calibrate.ts';
 import { histogram256, percentileFromHist } from './core/analysis/threshold.ts';
 import { extractDabChannel } from './core/image/color.ts';
@@ -19,10 +20,12 @@ import {
   DEFAULT_THRESHOLD,
   getStainProfile,
   STAIN_PROFILES,
-  type AnalysisResult,
   type ColocConfig,
   type Roi,
   type MetricKey,
+  type SampleRecord,
+  type IfSampleRecord,
+  type PathologyExperimentalDesign,
   type SegmentationConfig,
   type StainProfileId,
   type ThresholdConfig,
@@ -38,6 +41,7 @@ import ParamsPanel from './ui/ParamsPanel.tsx';
 import ResultsPanel from './ui/ResultsPanel.tsx';
 import RoiList from './ui/RoiList.tsx';
 import SamplesPanel from './ui/SamplesPanel.tsx';
+import IfSamplesPanel from './ui/IfSamplesPanel.tsx';
 import SceneSelector from './ui/SceneSelector.tsx';
 import { sceneForProfile, type AnalysisScene } from './ui/analysis-scenes.ts';
 import UploadPanel from './ui/UploadPanel.tsx';
@@ -102,28 +106,37 @@ export default function App() {
   const [project, setProject] = useState<LocalProject>(createEmptyProject);
   const [loaded, setLoaded] = useState(false);
   const [status, setStatus] = useState<Status>({ kind: 'idle', message: '' });
-  const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
-  const [analyzing, setAnalyzing] = useState(false);
+  const [analysisRun, setAnalysisRun] = useState<AnalysisRun | null>(null);
+  const analysisTicket = useRef(0);
   const [showOverlay, setShowOverlay] = useState(true);
   const [drawMode, setDrawMode] = useState<DrawMode>('none');
   const [calibrating, setCalibrating] = useState(false);
   const [pendingLinePx, setPendingLinePx] = useState<number | null>(null);
   const saveTimer = useRef<number | undefined>(undefined);
-  const aiModelRef = useRef<{ name: string; bytes: ArrayBuffer } | null>(null);
-  const lastLoadedModelRef = useRef<string | null>(null);
-  const useAiRef = useRef(false);
+  const aiModelRef = useRef<{ name: string; id: string; bytes: ArrayBuffer } | null>(null);
+  const modelSelection = useRef(0);
+  const [modelLoading, setModelLoading] = useState(false);
+  const [aiModelId, setAiModelId] = useState<string | null>(null);
   const [aiModelName, setAiModelName] = useState<string | null>(null);
-  const [aiActive, setAiActive] = useState(false);
   const [aiUseState, setAiUseState] = useState(false);
   const [aiNonce, setAiNonce] = useState(0);
   const [statsMetric, setStatsMetric] = useState<MetricKey>('positiveFraction');
+  const [addingSample, setAddingSample] = useState(false);
+  const [resolvingSources, setResolvingSources] = useState(false);
   const lastStainProfile = useRef<StainProfileId>('h_eosin');
   const userLoadedRef = useRef(false);
   const [projectGaps, setProjectGaps] = useState<string[]>([]);
   const [modelReload, setModelReload] = useState<ProjectView | null>(null);
-  const analyzedProjectRef = useRef<LocalProject | null>(null);
-  const snapshotRef = useRef<{ project: LocalProject; analysis: AnalysisResult | null; view: ProjectView } | null>(null);
-  snapshotRef.current = { project, analysis: analyzedProjectRef.current && ['pixels', 'rois', 'profileId', 'threshold', 'segmentation', 'calibration', 'coloc', 'stainOverrides'].every((key) => analyzedProjectRef.current![key as keyof LocalProject] === project[key as keyof LocalProject]) ? analysis : null, view: { showOverlay, statsMetric, lastStainProfile: lastStainProfile.current, modelName: aiModelName ?? modelReload?.modelName ?? null, modelRequested: aiUseState || Boolean(modelReload?.modelRequested) } };
+  const view: ProjectView = { showOverlay, statsMetric, lastStainProfile: lastStainProfile.current, modelName: aiModelName ?? modelReload?.modelName ?? null, modelId: aiModelId ?? modelReload?.modelId ?? null, modelRequested: aiUseState };
+  const { pixels: identityPixels, settingsKey, modelRequested, modelId } = analysisIdentity(project, view);
+  const identity = useMemo(() => ({ pixels: identityPixels, settingsKey, modelRequested, modelId }), [identityPixels, settingsKey, modelRequested, modelId]);
+  const identityRef = useRef(identity);
+  identityRef.current = identity;
+  const analysis = currentAnalysis(analysisRun, identity);
+  const currentFailure = analysisRun?.status === 'failed' && sameAnalysisIdentity(analysisRun.identity, identity) ? analysisRun.error : null;
+  const analyzing = Boolean(project.pixels && !analysis && !currentFailure);
+  const snapshotRef = useRef<{ project: LocalProject; run: AnalysisRun | null; view: ProjectView } | null>(null);
+  snapshotRef.current = { project, run: analysisRun, view };
 
 
   useEffect(() => {
@@ -133,7 +146,7 @@ export default function App() {
         if (userLoadedRef.current) return;
         if (saved?.version === 1 && (saved.pixels instanceof ImageData || saved.pixels === null)) {
           if (saved.restoredView) {
-            setShowOverlay(saved.restoredView.showOverlay); setStatsMetric(saved.restoredView.statsMetric); setModelReload(saved.restoredView);
+            setShowOverlay(saved.restoredView.showOverlay); setStatsMetric(saved.restoredView.statsMetric); setModelReload(saved.restoredView); setAiUseState(saved.restoredView.modelRequested);
           }
           if (sceneForProfile(saved.profileId) === 'stain') lastStainProfile.current = saved.profileId;
           setProject({
@@ -155,43 +168,42 @@ export default function App() {
     if (!loaded) return;
     window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => {
-      void set(STORAGE_KEY, { ...project, restoredView: snapshotRef.current?.view });
+      const state = snapshotRef.current!;
+      const savedIdentity = analysisIdentity(state.project, state.view);
+      const result = currentAnalysis(state.run, savedIdentity);
+      void set(STORAGE_KEY, { ...state.project, restoredView: state.view, restoredAnalysis: savedAnalysis(result) });
     }, 600);
     return () => window.clearTimeout(saveTimer.current);
-  }, [project, loaded, showOverlay, statsMetric, aiModelName, aiUseState]);
+  }, [project, loaded, showOverlay, statsMetric, aiModelName, aiModelId, aiUseState, analysisRun]);
 
   const { pixels, rois, profileId, threshold, segmentation, calibration, coloc } = project;
   const stainOverride = project.stainOverrides[profileId] ?? null;
   useEffect(() => {
-    if (!pixels) {
-      setAnalysis(null);
-      setAnalyzing(false);
+    if (!pixels) { setAnalysisRun(null); return; }
+    const ticket = ++analysisTicket.current;
+    const requestIdentity = identity;
+    setAnalysisRun(startAnalysis(ticket, requestIdentity));
+    if (modelLoading) return;
+    const ai = { useAi: aiUseState, model: aiModelRef.current };
+    if (ai.useAi && !ai.model && profileId !== 'if_coloc') {
+      setAnalysisRun((run) => finishAnalysis(run, ticket, new Error('请重新载入 AI 模型或关闭 AI 后再分析。')));
       return;
     }
-    setAnalyzing(true);
     let active = true;
     const timer = window.setTimeout(() => {
-      const ai = {
-        useAi: useAiRef.current && aiModelRef.current !== null,
-        model:
-          useAiRef.current && aiModelRef.current && lastLoadedModelRef.current !== aiModelRef.current.name
-            ? aiModelRef.current
-            : null,
-      };
       void runAnalysis(pixels, rois, profileId, threshold, segmentation, calibration, coloc, stainOverride, ai).then((result) => {
-        if (!active) return;
-        if (result.aiModelLoaded) lastLoadedModelRef.current = result.aiModelLoaded;
-        setAiActive(result.aiUsed);
-        analyzedProjectRef.current = project;
-        setAnalysis(result);
-        setAnalyzing(false);
+        if (!active || !sameAnalysisIdentity(requestIdentity, identityRef.current)) return;
+        setAnalysisRun((run) => finishAnalysis(run, ticket, result));
+      }).catch((error: unknown) => {
+        if (!active || !sameAnalysisIdentity(requestIdentity, identityRef.current)) return;
+        setAnalysisRun((run) => finishAnalysis(run, ticket, error instanceof Error ? error : new Error(String(error))));
       });
     }, 400);
-    return () => {
-      active = false;
-      window.clearTimeout(timer);
-    };
-  }, [pixels, rois, profileId, threshold, segmentation, calibration, coloc, stainOverride, aiNonce]);
+    return () => { active = false; window.clearTimeout(timer); };
+    // The value key includes every image/ROI/parameter field. Library/display
+    // changes do not restart analysis; model content and toggle changes do.
+  }, [identity, pixels, rois, profileId, threshold, segmentation, calibration, coloc, stainOverride, aiUseState, modelLoading, aiNonce]);
+
 
   const handleFile = useCallback(async (file: File) => {
     userLoadedRef.current = true;
@@ -266,9 +278,10 @@ export default function App() {
   );
 
   const batchCancelRef = useRef(false);
+  const batchGeneration = useRef(0);
   const [batch, setBatch] = useState<BatchState | null>(null);
   const busyRef = useRef(false);
-  busyRef.current = status.kind === 'busy' || calibrating || Boolean(batch?.running);
+  busyRef.current = status.kind === 'busy' || calibrating || modelLoading || Boolean(batch?.running);
   useEffect(() => {
     let mounted = true;
     const dispose = connectProjectAdapter({
@@ -276,7 +289,7 @@ export default function App() {
     exportProject: async () => {
       if (busyRef.current) throw new Error(t('请等待当前导入或批处理完成'));
       const state = snapshotRef.current!;
-      const result = await exportPathologyProject(state.project, state.view, state.analysis);
+      const result = await exportPathologyProject(state.project, state.view, state.run);
       return { blob: result.blob, name: `${(state.project.image?.name ?? 'Pathology project').replace(/\.[^.]+$/, '')}.wisplab.zip`, format: 'wisplab-pathology-v1.zip', summaryTranslations: { zh: result.completeness.join('\n') || '包含原图、ROI、样本及设置', en: result.completeness.join('\n') || 'Includes source images, ROIs, samples and settings' }, summary: result.completeness.length ? result.completeness.join('\n') : '包含原图、ROI、样本及设置 / Includes source images, ROIs, samples and settings' };
     },
     importProject: async (blob, options) => {
@@ -288,10 +301,10 @@ export default function App() {
       if (!window.confirm(t('打开此版本会替换当前工作内容，是否继续？') + (result.completeness.length ? '\n\n' + result.completeness.join('\n') : ''))) throw new DOMException('Cancelled', 'AbortError');
       if (!current()) throw new DOMException('Cancelled', 'AbortError');
       userLoadedRef.current = true;
-      aiModelRef.current = null; lastLoadedModelRef.current = null; useAiRef.current = false;
-      setAiModelName(null); setAiUseState(false); setAiActive(false); setModelReload(result.view);
+      modelSelection.current += 1; aiModelRef.current = null;
+      setModelLoading(false); setAiModelId(null); setAiModelName(null); setAiUseState(result.view.modelRequested); setModelReload(result.view);
       lastStainProfile.current = result.view.lastStainProfile;
-      setProject({ ...result.project, restoredView: result.view }); setAnalysis(null); setShowOverlay(result.view.showOverlay); setStatsMetric(result.view.statsMetric);
+      setProject({ ...result.project, restoredView: result.view }); setAnalysisRun(null); setShowOverlay(result.view.showOverlay); setStatsMetric(result.view.statsMetric);
       setDrawMode('none'); setPendingLinePx(null); setProjectGaps(result.completeness); setLoaded(true); setAiNonce((n) => n + 1);
       setStatus({ kind: 'ok', message: '项目已恢复；历史缺失附件不会自动补全。' });
     },
@@ -301,7 +314,9 @@ export default function App() {
 
   const runBatch = useCallback(
     async (files: File[], group: string) => {
+      const generation = ++batchGeneration.current;
       batchCancelRef.current = false;
+      const cancelled = () => batchCancelRef.current || generation !== batchGeneration.current;
       const config = {
         profileId: project.profileId,
         threshold: project.threshold,
@@ -310,13 +325,19 @@ export default function App() {
         coloc: project.coloc,
         stainOverride: project.stainOverrides[project.profileId] ?? null,
       };
+      const batchAi = { useAi: aiUseState, model: aiModelRef.current };
+      if (modelLoading || (batchAi.useAi && !batchAi.model)) {
+        setStatus({ kind: 'error', message: '请重新载入 AI 模型或关闭 AI 后再分析。' });
+        return;
+      }
       const sampleSettings = { ...analysisSettings(project), rois: [] };
       const controlSource = project.sources?.control ?? null;
       const errors: string[] = [];
       let done = 0;
       setBatch({ running: true, total: files.length, done: 0, current: files[0]?.name ?? '', errors, cancelled: false });
       for (const file of files) {
-        if (batchCancelRef.current) {
+        if (cancelled()) {
+          if (generation !== batchGeneration.current) return;
           setBatch((prev) => prev && { ...prev, running: false, current: '', cancelled: true });
           setStatus({ kind: 'ok', message: `批处理已取消：完成 ${done}/${files.length}` });
           return;
@@ -333,18 +354,25 @@ export default function App() {
             config.calibration,
             config.coloc,
             config.stainOverride,
-            {
-              useAi: useAiRef.current && aiModelRef.current !== null,
-              model:
-                useAiRef.current && aiModelRef.current && lastLoadedModelRef.current !== aiModelRef.current.name
-                  ? aiModelRef.current
-                  : null,
-            },
+            batchAi,
           );
-          if (result.aiModelLoaded) lastLoadedModelRef.current = result.aiModelLoaded;
+          if (cancelled()) {
+            if (generation !== batchGeneration.current) return;
+            setBatch((prev) => prev && { ...prev, running: false, current: '', cancelled: true });
+            setStatus({ kind: 'ok', message: `批处理已取消：完成 ${done}/${files.length}` });
+            return;
+          }
           const sampleId = crypto.randomUUID();
-          setProject((prev) => ({
+          const sourceId = await sourceContentId(file);
+          if (cancelled()) {
+            if (generation !== batchGeneration.current) return;
+            setBatch((prev) => prev && { ...prev, running: false, current: '', cancelled: true });
+            setStatus({ kind: 'ok', message: `批处理已取消：完成 ${done}/${files.length}` });
+            return;
+          }
+          setProject((prev) => cancelled() ? prev : ({
             ...prev,
+            experimentalDesign: prev.experimentalDesign ? { ...prev.experimentalDesign, confirmed: false } : undefined,
             sources: { ...(prev.sources ?? emptySources()), samples: { ...prev.sources?.samples, [sampleId]: { image: file, control: controlSource, settings: sampleSettings, analysis: savedAnalysis(result), modelName: result.aiModelLoaded } } },
             samples: [
               ...prev.samples,
@@ -353,12 +381,20 @@ export default function App() {
                 name: file.name.replace(/\.[^.]+$/, ''),
                 group,
                 imageName: file.name,
+                sourceId,
+                profileId: config.profileId,
                 addedAt: Date.now(),
                 metrics: result.overall,
               },
             ],
           }));
         } catch (error) {
+          if (cancelled()) {
+            if (generation !== batchGeneration.current) return;
+            setBatch((prev) => prev && { ...prev, running: false, current: '', cancelled: true });
+            setStatus({ kind: 'ok', message: `批处理已取消：完成 ${done}/${files.length}` });
+            return;
+          }
           errors.push(`${file.name}：${error instanceof Error ? error.message : String(error)}`);
         }
         done += 1;
@@ -370,10 +406,11 @@ export default function App() {
         message: `批处理完成：成功 ${done - errors.length}，失败 ${errors.length}`,
       });
     },
-    [project],
+    [project, aiUseState, modelLoading],
   );
 
   const clearImage = useCallback(() => {
+    batchGeneration.current += 1; batchCancelRef.current = true; setBatch(null);
     userLoadedRef.current = true; setProjectGaps([]); setModelReload(null);
     setProject(createEmptyProject());
     setDrawMode('none');
@@ -417,32 +454,138 @@ export default function App() {
     setProject((prev) => ({ ...prev, rois: prev.rois.filter((roi) => roi.id !== id) }));
   }, []);
 
-  const addSample = useCallback((group: string) => {
-    if (!analysis || !project.image) return;
-    const sampleId = crypto.randomUUID();
-    setProject((prev) => ({
-      ...prev,
-      sources: { ...(prev.sources ?? emptySources()), samples: { ...prev.sources?.samples, [sampleId]: { image: prev.sources?.main ?? null, control: prev.sources?.control ?? null, settings: analysisSettings(prev), analysis: savedAnalysis(analysis), modelName: analysis.aiModelLoaded } } },
-      samples: [
-        ...prev.samples,
-        {
-          id: sampleId,
-          name: `S${prev.samples.length + 1} ${project.image!.name}`,
-          group,
-          imageName: project.image!.name,
-          addedAt: Date.now(),
-          metrics: analysis.overall,
-        },
-      ],
-    }));
-    setStatus({ kind: 'ok', message: `已加入样本库（分组：${group}）` });
-  }, [analysis, project.image]);
+  const addSample = useCallback(async (group: string) => {
+    const state = snapshotRef.current!;
+    const result = currentAnalysis(state.run, analysisIdentity(state.project, state.view));
+    if (!result || !state.project.image || state.project.profileId === 'if_coloc') return;
+    setAddingSample(true);
+    try {
+      const sourceId = state.project.sources?.main ? await sourceContentId(state.project.sources.main) : undefined;
+      const latest = snapshotRef.current!;
+      if (!currentAnalysis(state.run, analysisIdentity(latest.project, latest.view))) {
+        setStatus({ kind: 'error', message: '分析输入或模型已改变，本次未加入样本；请等待当前结果后重试。' });
+        return;
+      }
+      const sampleId = crypto.randomUUID();
+      setProject((prev) => {
+      if (!currentAnalysis(state.run, analysisIdentity(prev, snapshotRef.current!.view))) return prev;
+      return {
+        ...prev,
+        experimentalDesign: prev.experimentalDesign ? { ...prev.experimentalDesign, confirmed: false } : undefined,
+        sources: { ...(prev.sources ?? emptySources()), samples: { ...prev.sources?.samples, [sampleId]: { image: state.project.sources?.main ?? null, control: state.project.sources?.control ?? null, settings: analysisSettings(state.project), analysis: savedAnalysis(result), modelName: result.aiModelLoaded } } },
+        samples: [
+          ...prev.samples,
+          {
+            id: sampleId,
+            name: `S${prev.samples.length + 1} ${prev.image!.name}`,
+            group,
+            imageName: prev.image!.name,
+            sourceId,
+            profileId: prev.profileId,
+            addedAt: Date.now(),
+            metrics: result.overall,
+          },
+        ],
+      };
+      });
+      setStatus({ kind: 'ok', message: `已加入样本库（分组：${group}）` });
+    } catch (error) {
+      setStatus({ kind: 'error', message: error instanceof Error ? error.message : String(error) });
+    } finally { setAddingSample(false); }
+  }, []);
 
-  const updateSample = useCallback((id: string, patch: { group?: string; name?: string }) => {
+  const addIfSample = useCallback(async (group: string) => {
+    const state = snapshotRef.current!;
+    const result = currentAnalysis(state.run, analysisIdentity(state.project, state.view));
+    if (!result?.ifAnalysis || !state.project.image || state.project.profileId !== 'if_coloc') return;
+    setAddingSample(true);
+    try {
+      const sourceId = state.project.sources?.main ? await sourceContentId(state.project.sources.main) : 'unknown';
+      const latest = snapshotRef.current!;
+      if (!currentAnalysis(state.run, analysisIdentity(latest.project, latest.view))) {
+        setStatus({ kind: 'error', message: '分析输入或模型已改变，本次未加入样本；请等待当前结果后重试。' });
+        return;
+      }
+      const id = crypto.randomUUID();
+      const record: IfSampleRecord = { id, name: `IF${(state.project.ifSamples?.length ?? 0) + 1} ${state.project.image.name}`, group,
+        imageName: state.project.image.name, addedAt: Date.now(), sourceId, profileId: 'if_coloc',
+        image: { ...state.project.image }, config: { ...state.project.coloc }, analysis: result.ifAnalysis };
+      setProject((prev) => currentAnalysis(state.run, analysisIdentity(prev, snapshotRef.current!.view)) ? {
+        ...prev, ifSamples: [...(prev.ifSamples ?? []), record],
+        ifExperimentalDesign: prev.ifExperimentalDesign ? { ...prev.ifExperimentalDesign, confirmed: false } : undefined,
+        sources: { ...(prev.sources ?? emptySources()), samples: { ...prev.sources?.samples,
+          [id]: { image: state.project.sources?.main ?? null, control: null, settings: analysisSettings(state.project), analysis: savedAnalysis(result), modelName: null } } },
+      } : prev);
+      setStatus({ kind: 'ok', message: '已保存 IF 整图与 ROI 结果。' });
+    } catch (error) {
+      setStatus({ kind: 'error', message: error instanceof Error ? error.message : String(error) });
+    } finally { setAddingSample(false); }
+  }, []);
+
+  const restoreIfSample = useCallback(async (id: string) => {
+    const before = snapshotRef.current!;
+    const record = before.project.ifSamples?.find((sample) => sample.id === id);
+    const source = before.project.sources?.samples[id];
+    if (!record || !source?.image) return;
+    setStatus({ kind: 'busy', message: '正在载入 IF 记录并准备复算…' });
+    try {
+      if (record.sourceId.startsWith('sha256:') && record.sourceId !== await sourceContentId(source.image)) throw new Error('原图内容与 IF 记录的来源身份不一致。');
+      const decoded = await decodeImageFile(source.image);
+      if (['sourceWidth', 'sourceHeight', 'workingWidth', 'workingHeight', 'bitsPerSample', 'workingScale'].some((key) => decoded[key as keyof typeof decoded] !== record.image[key as keyof typeof record.image])) throw new Error('解码尺寸或精度与保存的 IF 记录不一致。');
+      if (before.project !== snapshotRef.current?.project || JSON.stringify(before.view) !== JSON.stringify(snapshotRef.current?.view)) {
+        setStatus({ kind: 'error', message: '当前工作已改变，本次未载入 IF 记录。' });
+        return;
+      }
+      userLoadedRef.current = true;
+      setAnalysisRun(null); setAiUseState(false);
+      setProject((prev) => ({ ...prev, ...source.settings, profileId: 'if_coloc', coloc: { ...record.config },
+        image: { ...record.image }, pixels: decoded.pixels, restoredAnalysis: null,
+        sources: { ...(prev.sources ?? emptySources()), main: source.image, control: null } }));
+      setDrawMode('none'); setPendingLinePx(null);
+      setStatus({ kind: 'ok', message: '已载入 IF 原图与历史配置，正在重新计算。' });
+    } catch (error) {
+      setStatus({ kind: 'error', message: error instanceof Error ? error.message : String(error) });
+    }
+  }, []);
+
+  const updateSample = useCallback((id: string, patch: Partial<SampleRecord>) => {
     setProject((prev) => ({
       ...prev,
+      experimentalDesign: prev.experimentalDesign ? { ...prev.experimentalDesign, confirmed: false,
+        assignments: prev.experimentalDesign.assignments.map((a) => a.sampleId === id && patch.group !== undefined ? { ...a, group: patch.group } : a) } : undefined,
       samples: prev.samples.map((sample) => (sample.id === id ? { ...sample, ...patch } : sample)),
     }));
+  }, []);
+
+  const updateDesign = useCallback((design: PathologyExperimentalDesign) => {
+    setProject((prev) => ({ ...prev, experimentalDesign: design,
+      samples: prev.samples.map((sample) => {
+        const assignment = design.assignments.find((a) => a.sampleId === sample.id);
+        return assignment ? { ...sample, group: assignment.group } : sample;
+      }) }));
+  }, []);
+
+  const resolveSources = useCallback(async () => {
+    const state = snapshotRef.current!;
+    setResolvingSources(true);
+    try {
+      const patches = await Promise.all(state.project.samples.map(async (sample) => {
+        const source = state.project.sources?.samples[sample.id];
+        return { id: sample.id, sourceId: source?.image ? await sourceContentId(source.image) : sample.sourceId,
+          profileId: source?.settings.profileId ?? sample.profileId };
+      }));
+      setProject((prev) => {
+        if (prev.sources !== state.project.sources) return prev;
+        return { ...prev, experimentalDesign: prev.experimentalDesign ? { ...prev.experimentalDesign, confirmed: false } : undefined,
+          samples: prev.samples.map((sample) => {
+            const patch = patches.find((p) => p.id === sample.id);
+            return patch ? { ...sample, ...patch } : sample;
+          }) };
+      });
+      setStatus({ kind: 'ok', message: '已核对保存的来源；缺少原图或历史设置的记录仍标为未知。' });
+    } catch (error) {
+      setStatus({ kind: 'error', message: error instanceof Error ? error.message : String(error) });
+    } finally { setResolvingSources(false); }
   }, []);
 
   const hasImage = Boolean(project.pixels);
@@ -454,7 +597,7 @@ export default function App() {
   function selectProfile(nextProfile: StainProfileId) {
     if (nextProfile === project.profileId) return;
     if (sceneForProfile(nextProfile) === 'stain') lastStainProfile.current = nextProfile;
-    setAnalysis(null);
+    setAnalysisRun(null);
     setProject((prev) => ({ ...prev, profileId: nextProfile }));
   }
 
@@ -467,18 +610,27 @@ export default function App() {
   const reportRef = useRef<{ json: () => unknown } | null>(null);
   reportRef.current = {
     json: () => {
-      const groups = groupsFromSamples({ samples: project.samples, metric: statsMetric });
-      const stats = groups.length >= 2 ? compareGroups(groups) : null;
+      const unitStatistics = sampleStatistics(project.samples, statsMetric, project.experimentalDesign);
+      const stats = unitStatistics.inference ? unitStatistics.report : null;
       const diagnostics = evaluateDiagnostics({ project, result: analysis, qc: analysis?.qc ?? null, statsReport: stats });
       return {
         generatedAt: new Date().toISOString(),
+        analysisStatus: analysis ? 'ready' : currentFailure ? 'failed' : hasImage ? 'pending' : 'empty',
+        parameters: { ...analysisSettings(project), aiRequested: view.modelRequested, aiModelId: view.modelId, aiUsed: analysis?.aiUsed ?? null },
         image: project.image,
         profile: project.profileId,
-        metrics: analysis?.overall ?? null,
-        samples: project.samples,
+        metrics: project.profileId === 'if_coloc' ? null : analysis?.overall ?? null,
+        ...ifReportData(project, analysis),
+        samples: project.samples.map((sample) => ({
+          ...sample,
+          metrics: sample.profileId === 'if_coloc' ? null : sample.metrics,
+          metricStatus: sample.profileId === 'if_coloc' ? 'unsupported_if_sample_metrics' : 'recorded',
+        })),
         statistics: stats,
+        experimentalDesign: project.experimentalDesign ?? null,
+        sampleStatistics: unitStatistics,
         diagnostics,
-        methods: { zh: generateMethodsZh(project, analysis), en: generateMethodsEn(project, analysis) },
+        methods: { zh: generateMethodsZh(project, analysis, statsMetric), en: generateMethodsEn(project, analysis, statsMetric) },
       };
     },
   };
@@ -506,7 +658,7 @@ export default function App() {
           {t("WispLab实验数据分析")}
         </a>
       </div>
-      {projectGaps.length > 0 && <section className="panel" role="status"><strong>{t('项目完整性说明')}</strong><ul>{projectGaps.map((gap, index) => <li key={index}>{gap}</li>)}</ul></section>}
+      {projectGaps.length > 0 && <details className="panel project-gaps" role="status"><summary>{t('项目完整性说明')} ({projectGaps.length})</summary><ul>{projectGaps.map((gap, index) => <li key={index}>{gap}</li>)}</ul></details>}
       {modelReload?.modelName && <section className="panel" role="status">{t('项目使用过 AI 模型，请重新载入本机模型后复核结果。')} {modelReload.modelName}</section>}
       <header className="app-header">
         <a className="app-brand" href={withLanguage("./")} aria-label={t("Pathology Workbench 病理工作台")}>
@@ -549,6 +701,10 @@ export default function App() {
             onLineDrawn={setPendingLinePx}
           />
           <div className="workspace-caption"><span>{project.image ? project.image.name : t('支持病理染色、免疫组化与免疫荧光图像')}</span><span>{t("滚轮缩放 · 拖动平移")}</span></div>
+          {hasImage && !analysis && <div className="analysis-state" aria-live="polite">
+            <p>{t(currentFailure ? '分析失败，当前结果不可用。请重试或调整设置。' : '输入或设置已改变，当前结果正在重新计算；完成前不可保存为样本或导出当前结果。')}</p>
+            {currentFailure && <><p>{tError(currentFailure)}</p><button type="button" onClick={() => setAiNonce((n) => n + 1)}>{t('重新分析')}</button></>}
+          </div>}
           <div className="analysis-results"><ResultsPanel result={analysis} running={analyzing} hasImage={hasImage} /></div>
         </div>
         <aside className="side-panel">
@@ -624,24 +780,31 @@ export default function App() {
             <details key={`ai-${scene}`} className="panel panel-disclosure" open={scene === 'ihc'}>
               <summary>{t("AI 核分割（可选）")}{aiUseState && t(' · 已启用')}</summary>
             <AiPanel
-              modelName={aiModelName}
-              aiActive={aiActive}
+              modelName={aiModelName ?? modelReload?.modelName ?? null}
+              aiActive={analysis?.aiUsed ?? false}
               useAi={aiUseState}
               onUseAiChange={(value) => {
-                useAiRef.current = value;
                 setAiUseState(value);
-                setAiNonce((n) => n + 1); // 触发重分析
               }}
               onModelFile={(file) => {
-                void file.arrayBuffer().then((bytes) => {
-                  aiModelRef.current = { name: file.name, bytes };
-                  setModelReload(null);
-                  lastLoadedModelRef.current = null; // 强制下次请求装载
-                  setAiModelName(file.name);
-                  useAiRef.current = true;
-                  setAiUseState(true);
-                  setAiNonce((n) => n + 1); // 触发重分析
-                });
+                const selection = ++modelSelection.current;
+                aiModelRef.current = null;
+                setModelReload(null); setAiModelId(null); setAiModelName(file.name);
+                setAiUseState(true); setModelLoading(true);
+                void (async () => {
+                  try {
+                    const bytes = await file.arrayBuffer();
+                    const id = await modelContentId(bytes);
+                    if (selection !== modelSelection.current) return;
+                    aiModelRef.current = { name: file.name, id, bytes };
+                    setAiModelId(id);
+                  } catch (error) {
+                    if (selection !== modelSelection.current) return;
+                    setStatus({ kind: 'error', message: error instanceof Error ? error.message : String(error) });
+                  } finally {
+                    if (selection === modelSelection.current) setModelLoading(false);
+                  }
+                })();
               }}
             />
             </details>
@@ -659,17 +822,35 @@ export default function App() {
           <SamplesPanel
             project={project}
             statsMetric={statsMetric}
-            canAddSample={Boolean(analysis) && !isColoc}
+            canAddSample={Boolean(analysis) && !isColoc && !addingSample}
             disabled={analyzing}
             onAddSample={addSample}
             onUpdateSample={updateSample}
+            onDesignChange={updateDesign}
+            onResolveSources={resolveSources}
+            resolvingSources={resolvingSources}
             onDeleteSample={(id) =>
-              setProject((prev) => ({ ...prev, samples: prev.samples.filter((s) => s.id !== id) }))
+              setProject((prev) => ({ ...prev,
+                experimentalDesign: prev.experimentalDesign ? { ...prev.experimentalDesign, confirmed: false,
+                  assignments: prev.experimentalDesign.assignments.filter((a) => a.sampleId !== id) } : undefined,
+                samples: prev.samples.filter((s) => s.id !== id) }))
             }
             onStatus={(message, kind) => setStatus({ kind, message })}
             analysisResult={analysis}
             onStatsMetricChange={setStatsMetric}
           />
+          {(isColoc || (project.ifSamples?.length ?? 0) > 0) && <IfSamplesPanel project={project} result={analysis} saving={addingSample}
+            busy={analyzing || status.kind === 'busy'} onSave={addIfSample} onRestore={restoreIfSample}
+            canRestore={(id) => Boolean(project.sources?.samples[id]?.image)}
+            onDesign={(design) => setProject((prev) => ({ ...prev, ifExperimentalDesign: design }))}
+            onUpdate={(id, patch) => setProject((prev) => ({ ...prev,
+              ifExperimentalDesign: prev.ifExperimentalDesign ? { ...prev.ifExperimentalDesign, confirmed: false,
+                assignments: prev.ifExperimentalDesign.assignments.map((a) => a.sampleId === id && patch.group !== undefined ? { ...a, group: patch.group } : a) } : undefined,
+              ifSamples: prev.ifSamples?.map((record) => record.id === id ? { ...record, ...patch } : record) }))}
+            onDelete={(id) => setProject((prev) => ({ ...prev,
+              ifExperimentalDesign: prev.ifExperimentalDesign ? { ...prev.ifExperimentalDesign, confirmed: false,
+                assignments: prev.ifExperimentalDesign.assignments.filter((a) => a.sampleId !== id) } : undefined,
+              ifSamples: prev.ifSamples?.filter((record) => record.id !== id) }))} />}
           <AdvisorPanel
             project={project}
             analysis={analysis}

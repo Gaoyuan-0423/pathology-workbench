@@ -6,7 +6,7 @@
 import { buildStainMatrix, extractStainChannel } from './image/color.ts';
 import { analyzeColocImage, analyzeStainImage } from './analysis/engine.ts';
 import { probToMask } from './ai/prepost.ts';
-import { ensureSession, cachedModelName, inferNucleiProb } from './ai/session.ts';
+import { ensureSession, cachedModelName, cachedModelId, inferNucleiProb } from './ai/session.ts';
 import { getStainProfile } from './types.ts';
 import type {
   AnalysisResult,
@@ -29,27 +29,36 @@ export interface AnalysisRequest {
   calibration: Calibration;
   coloc: ColocConfig;
   stainOverride: [Vec3, Vec3] | null;
-  ai: { useAi: boolean; model: { name: string; bytes: ArrayBuffer } | null };
+  ai: { useAi: boolean; model: { name: string; id: string; bytes: ArrayBuffer } | null };
 }
+
+export type AnalysisResponse = AnalysisResult | { requestId: number; error: string };
 
 interface WorkerScope {
   onmessage: ((event: MessageEvent<AnalysisRequest>) => void) | null;
 }
 
 const workerSelf = self as unknown as WorkerScope & {
-  postMessage: (message: AnalysisResult) => void;
+  postMessage: (message: AnalysisResponse) => void;
 };
 
-workerSelf.onmessage = async (event) => {
+// Front-panel and batch requests share the model cache. Serialize the async shell
+// so one request cannot swap the model while another request is awaiting inference.
+let queue = Promise.resolve();
+workerSelf.onmessage = (event) => {
   const request = event.data;
-  const result = request.profileId === 'if_coloc'
-    ? runColoc(request)
-    : await runStain(request);
-  workerSelf.postMessage(result);
+  queue = queue.then(async () => {
+    try {
+      const result = request.profileId === 'if_coloc' ? runColoc(request) : await runStain(request);
+      workerSelf.postMessage(result);
+    } catch (error) {
+      workerSelf.postMessage({ requestId: request.requestId, error: error instanceof Error ? error.message : String(error) });
+    }
+  });
 };
 
 function runColoc(request: AnalysisRequest): AnalysisResult {
-  const engine = analyzeColocImage(request.pixels, request.coloc);
+  const engine = analyzeColocImage(request.pixels, request.coloc, request.rois);
   return {
     requestId: request.requestId,
     overall: engine.overall,
@@ -63,9 +72,13 @@ function runColoc(request: AnalysisRequest): AnalysisResult {
       request.pixels.height,
     ),
     coloc: engine.coloc,
+    ifAnalysis: engine.ifAnalysis,
     qc: null,
     aiUsed: false,
     aiModelLoaded: null,
+    aiModelId: null,
+    aiRequested: false,
+    aiRequestedModelId: null,
     warnings: engine.warnings,
   };
 }
@@ -74,14 +87,13 @@ async function runStain(request: AnalysisRequest): Promise<AnalysisResult> {
   const warnings: string[] = [];
   let aiMask: Uint8Array | null = null;
   let aiUsed = false;
-  let aiModelLoaded: string | null = cachedModelName();
+  let aiModelLoaded: string | null = null;
+  let aiModelId: string | null = null;
 
   if (request.ai?.useAi) {
     try {
-      if (request.ai.model && cachedModelName() !== request.ai.model.name) {
-        aiModelLoaded = null;
-        await ensureSession(request.ai.model.name, request.ai.model.bytes);
-      }
+      if (!request.ai.model) throw new Error('AI 模型未加载');
+      await ensureSession(request.ai.model.name, request.ai.model.bytes, request.ai.model.id);
       // 核分割源：第一染色通道（0–255），与引擎取法一致
       const profile = getStainProfile(request.profileId);
       const pair = request.stainOverride ?? profile.stains!;
@@ -98,6 +110,7 @@ async function runStain(request: AnalysisRequest): Promise<AnalysisResult> {
       aiMask = probToMask(prob, 0.5);
       aiUsed = true;
       aiModelLoaded = cachedModelName();
+      aiModelId = cachedModelId();
     } catch (error) {
       warnings.push(`AI 核分割失败，已回落 Otsu：${error instanceof Error ? error.message : String(error)}`);
     }
@@ -127,9 +140,13 @@ async function runStain(request: AnalysisRequest): Promise<AnalysisResult> {
       request.pixels.height,
     ),
     coloc: null,
+    ifAnalysis: null,
     qc: engine.qc,
     aiUsed,
     aiModelLoaded,
+    aiModelId,
+    aiRequested: request.ai.useAi,
+    aiRequestedModelId: request.ai.useAi ? request.ai.model?.id ?? null : null,
     warnings: [...warnings, ...engine.warnings],
   };
 }

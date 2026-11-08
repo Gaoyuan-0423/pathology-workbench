@@ -1,5 +1,6 @@
 import { tError, t } from '../i18n.ts';
 import type { AnalysisResult } from '../core/types.ts';
+import IfResults from './IfResults.tsx';
 
 interface ResultsPanelProps {
   result: AnalysisResult | null;
@@ -13,13 +14,16 @@ function pct(value: number | null): string {
 
 export default function ResultsPanel({ result, running, hasImage }: ResultsPanelProps) {
   if (!hasImage || !result) return null;
+  if (result.ifAnalysis) return <section className="panel" aria-label={t('当前 IF 结果')}>
+    <h3>{t('共定位结果')}</h3><IfResults analysis={result.ifAnalysis} />
+  </section>;
   if (result.coloc) {
     return (
       <section className="panel">
         <h3>{t("共定位结果 ")}{running && <span className="running-badge">{t("分析中…")}</span>}</h3>
         <table className="result-table">
           <tbody>
-            <tr><td>{t("掩膜 Pearson r（主指标）")}</td><td>{result.coloc.pearsonMasked.toFixed(3)}</td></tr>
+            <tr><td>{t("掩膜 Pearson r（主指标）")}</td><td>{Number.isFinite(result.coloc.pearsonMasked) ? result.coloc.pearsonMasked.toFixed(3) : '—'}</td></tr>
             <tr><td>{t("全像素 Pearson r（参考）")}</td><td>{Number.isFinite(result.coloc.pearsonAll) ? result.coloc.pearsonAll.toFixed(3) : '—'}</td></tr>
             <tr><td>{t("Manders M1（A 在 B 阳性区）")}</td><td>{result.coloc.mandersM1.toFixed(3)}</td></tr>
             <tr><td>{t("Manders M2（B 在 A 阳性区）")}</td><td>{result.coloc.mandersM2.toFixed(3)}</td></tr>
@@ -29,6 +33,7 @@ export default function ResultsPanel({ result, running, hasImage }: ResultsPanel
         </table>
         <p className="panel-note">
           {t("Pearson 范围 −1…1；Manders 0…1。掩膜 = 任一通道超阈像素。")}</p>
+        <p className="panel-note">{t('旧格式整图结果没有区域计数与未定义原因；请重新分析以获得完整 IF 结果。')}</p>
       </section>
     );
   }
