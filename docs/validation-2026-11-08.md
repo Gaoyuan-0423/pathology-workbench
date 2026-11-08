@@ -35,6 +35,12 @@ npx playwright test --workers=1
 
 The screenshot test writes the README screenshots. Preserve those files before local reruns if the intention is to inspect test output without updating the documentation images. GitHub CI results are separate runs and must be assessed on the PR's commit.
 
+### Integration with the current main branch
+
+The PR was prepared in a separate worktree on top of main commit [`bb3af4b`](https://github.com/Gaoyuan-0423/pathology-workbench/commit/bb3af4bfc312733e8239c808b127e2294cd84ecd), preserving the upstream optional `includeNuclei` export and its regression test. The original validated implementation was retained separately. Among the 65 snapshot entries, only `src/core/analysis/engine.ts` differs after integration, by those upstream optional-export additions; no prior source hash is claimed to describe that combined file.
+
+The integrated implementation was checked again: **29 test files, 289/289 unit tests passed**, including the upstream test that optional nucleus export does not alter ordinary measurements; TypeScript/Vite production build passed; lint exited 0 with the same 9 warnings. The previous 28/28 local browser result belongs to the pre-integration snapshot. The browser suite and 35-image measurement suite were not rerun locally during PR preparation; PR CI provides a separate browser run for the integrated commit. The additional upstream unit test is not added to a count of experiments or images.
+
 ## Numerical and image-regression evidence
 
 The following are summaries of retained **local development checks**, not a public independent benchmark deposit. The external Python reference scripts and their full result artifacts are not included in this repository. Counts describe assertions and fixtures, not independent experiments or participants; targeted development checks are not added to the full-suite test denominator.
