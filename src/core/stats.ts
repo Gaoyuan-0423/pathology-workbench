@@ -523,7 +523,8 @@ export function dagostinoPearson(xs: number[]): NormalityResult | null {
   const aBig = 6 + (8 / sqrtBeta1) * (2 / sqrtBeta1 + Math.sqrt(1 + 4 / (sqrtBeta1 * sqrtBeta1)));
   const term1 = 1 - 2 / (9 * aBig);
   const denom = 1 + x * Math.sqrt(2 / (aBig - 4));
-  const term2 = Math.sign(denom || 1) * Math.cbrt(term1 / (Math.abs(denom) || 1e-300));
+  // The cube-root numerator is (1 − 2/A), not term1 = (1 − 2/(9A)).
+  const term2 = Math.sign(denom || 1) * Math.cbrt((1 - 2 / aBig) / (Math.abs(denom) || 1e-300));
   const zKurt = (term1 - term2) / Math.sqrt(2 / (9 * aBig));
 
   const k2 = zSkew * zSkew + zKurt * zKurt;
