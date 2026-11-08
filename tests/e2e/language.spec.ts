@@ -115,7 +115,7 @@ test('switching language retains image, ROI, calibration, numbers and user input
   const csvDownload = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Export CSV', exact: true }).click();
   const csv = await readFile((await (await csvDownload).path())!, 'utf8');
-  expect(csv.replace(/^\uFEFF/, '').split('\n')[0]).toBe('Sample,Group,Image,Positive area,Positive nuclei,Total nuclei,Labeling index,H-score,IOD,Mean OD');
+  expect(csv.replace(/^\uFEFF/, '').split('\n')[0].startsWith('Sample,Group,Image,Positive area,Positive nuclei,Total nuclei,Labeling index,H-score,IOD,Mean OD,')).toBe(true);
   await page.getByRole('button', { name: '中文', exact: true }).click();
   expect((await page.locator('.result-overall td').allTextContents()).slice(1)).toEqual(before.slice(1));
   expect(errors).toEqual([]);
@@ -134,7 +134,7 @@ test('English errors and all scenes fit a 390px screen', async ({ page }) => {
 });
 
 
-test('English charts and diagnostic exports retain numerical data and user names', async ({ page }) => {
+test('English unconfirmed duplicate images stay descriptive and exports retain data and user names', async ({ page }) => {
   await page.goto('/?lang=en');
   await page.setInputFiles('.dropzone input[type="file"]', { name: fileName, mimeType: 'image/png', buffer: createSyntheticHdabPng().buffer });
   await expect(page.locator('.result-overall td').nth(1)).toHaveText(/%$/);
@@ -143,8 +143,12 @@ test('English charts and diagnostic exports retain numerical data and user names
     await page.getByRole('button', { name: 'Add sample', exact: true }).click();
     await page.getByRole('button', { name: 'Add sample', exact: true }).click();
   }
-  await expect(page.locator('.chart-preview')).toContainText('Positive area by group');
-  await expect(page.locator('.chart-preview')).toContainText('(mean ± SD)');
+  await expect.poll(() => page.evaluate(() => (window as any).__pathologyAPI.getReportJson().samples.length)).toBe(4);
+  await expect(page.locator('.chart-preview')).toHaveCount(0);
+  const current = await page.evaluate(() => (window as any).__pathologyAPI.getReportJson());
+  expect(current.statistics).toBeNull();
+  expect(current.sampleStatistics.report.inferenceStatus).toBe('descriptive');
+  expect(current.sampleStatistics.counts).toMatchObject({ nRecords: 4, nImages: 1, nBio: null });
   await expectEnglish(page);
   const downloading = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Export report JSON', exact: true }).click();
@@ -152,8 +156,11 @@ test('English charts and diagnostic exports retain numerical data and user names
   expect(report.metrics['Positive area']).toEqual(expect.any(Number));
   expect(report.samples.map((sample: { group: string }) => sample.group)).toEqual(['Group A', 'Group A', 'Group B', 'Group B']);
   expect(report.image.name).toBe(fileName);
+  expect(report.statistics.inferenceStatus).toBe('descriptive');
+  expect(report.statistics.omnibusParametric).toBeNull();
+  expect(report.statistics.omnibusNonParametric).toBeNull();
   expect(JSON.stringify(report.diagnostics)).not.toMatch(/[\u4e00-\u9fff]/);
   await page.getByRole('button', { name: '中文', exact: true }).click();
-  await expect(page.locator('.chart-preview')).toContainText('阳性面积 组间比较');
-  await expect(page.locator('.chart-preview')).toContainText('（均值 ± SD）');
+  await expect(page.locator('.chart-preview')).toHaveCount(0);
+  await expect(page.getByRole('region', { name: '实验单位汇总', exact: true })).toContainText('当前仅描述原始记录');
 });

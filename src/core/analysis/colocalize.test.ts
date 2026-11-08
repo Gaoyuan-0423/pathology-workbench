@@ -31,7 +31,7 @@ describe('computeColocalization（手动阈值，手算对照）', () => {
   const G_anti = [0, 0, 10, 10, 0, 0, 20, 20];
   const G_proportional = [0, 0, 20, 20, 40, 40, 0, 0];
 
-  it('反相关双通道：掩膜 Pearson = 0，M1 = M2 = 0.5', () => {
+  it('互补双通道：掩膜 Pearson = -1，M1 = M2 = 1/3', () => {
     const result = computeColocalization(
       makePixels(R, G_anti, [0, 0, 0, 0, 0, 0, 0, 0]),
       config({ channelA: 0, channelB: 1, thresholdMode: 'manual', manualA: 5, manualB: 5, backgroundPercentile: 0 }),
@@ -80,7 +80,7 @@ describe('computeColocalization（手动阈值，手算对照）', () => {
     expect(result.pearsonMasked).toBeLessThanOrEqual(1);
   });
 
-  it('常数通道：Pearson 为 NaN、Manders 为 0，不崩溃', () => {
+  it('正信号常数通道：Pearson 为 NaN、Manders 为 1，不崩溃', () => {
     const result = computeColocalization(
       makePixels([7, 7, 7, 7, 7, 7, 7, 7], [7, 7, 7, 7, 7, 7, 7, 7], [0, 0, 0, 0, 0, 0, 0, 0]),
       config({ channelA: 0, channelB: 1, thresholdMode: 'manual', manualA: 5, manualB: 5, backgroundPercentile: 0 }),

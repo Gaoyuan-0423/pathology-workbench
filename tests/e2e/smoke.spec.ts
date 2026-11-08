@@ -50,3 +50,28 @@ test('批处理：多张合成图逐张分析入样本库', async ({ page }) => 
   await expect(page.getByText('比较指标')).toBeVisible();
 });
 
+test('IF reports preserve real colocalization without relabelling compatibility placeholders as stain measurements', async ({ page }) => {
+  // This RGB fixture exercises the real worker/report boundary, not fluorescence accuracy.
+  await page.goto('/?lang=zh');
+  await page.getByRole('button', { name: 'IF 免疫荧光', exact: true }).click();
+  await page.setInputFiles('.dropzone input[type="file"]', {
+    name: 'synthetic-rgb-report.png', mimeType: 'image/png', buffer: createSyntheticHdabPng(100, 100).buffer,
+  });
+  const report = () => page.evaluate(() => (window as any).__pathologyAPI.getReportJson());
+  await expect.poll(async () => (await report()).analysisStatus).toBe('ready');
+  const current = await report();
+  expect(current.profile).toBe('if_coloc');
+  expect(current.metrics).toBeNull();
+  expect(current.colocalization).toHaveProperty('mandersM1');
+  expect(current.colocalization).toHaveProperty('pearsonMasked');
+  await expect(page.getByRole('button', { name: '加入样本', exact: true })).toBeDisabled();
+  const downloaded = page.waitForEvent('download');
+  await page.getByRole('button', { name: '导出报告 JSON', exact: true }).click();
+  const stream = await (await downloaded).createReadStream();
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
+  const exported = JSON.parse(Buffer.concat(chunks).toString());
+  expect(Object.values(exported.metrics).every((value) => value === null)).toBe(true);
+  expect(exported.colocalization).toEqual(current.colocalization);
+});
+

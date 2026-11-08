@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { evaluateDiagnostics, type AdvisorContext } from './advisor.ts';
 import type { AnalysisQc, AnalysisResult } from './types.ts';
 import type { GroupStatsReport } from './analysis/statistics.ts';
+import { compareGroups } from './analysis/statistics.ts';
+import { computeColocalizationRegions } from './analysis/colocalize.ts';
 import { createEmptyProject, DEFAULT_COLOC, type ProjectState } from './types.ts';
 import { t } from '../i18n.ts';
 
@@ -64,8 +66,8 @@ function baseResult(): AnalysisResult {
 function ctx(overrides: Partial<AdvisorContext> & { project?: ProjectState }): AdvisorContext {
   return {
     project: overrides.project ?? baseProject(),
-    result: overrides.result ?? baseResult(),
-    qc: overrides.qc ?? defaultQc,
+    result: overrides.result === undefined ? baseResult() : overrides.result,
+    qc: overrides.qc === undefined ? defaultQc : overrides.qc,
     statsReport: overrides.statsReport ?? null,
   };
 }
@@ -163,7 +165,7 @@ describe('evaluateDiagnostics', () => {
     expect(report.issues.some((issue) => issue.message.includes('未标定像素尺寸'))).toBe(true);
   });
 
-  it('共定位符号相反 → 掩膜优先警告', () => {
+  it('different finite Pearson signs prompt a scope check without declaring one scientifically preferable', () => {
     const project = { ...baseProject(), profileId: 'if_coloc' as const, coloc: DEFAULT_COLOC };
     const result = baseResult();
     result.coloc = {
@@ -174,6 +176,8 @@ describe('evaluateDiagnostics', () => {
     };
     const report = evaluateDiagnostics(ctx({ project, result, qc: null }));
     expect(report.issues.some((issue) => issue.message.includes('符号相反'))).toBe(true);
+    expect(report.issues.find((issue) => issue.message.includes('符号相反'))?.suggestion).toContain('符号差异不能证明背景主导');
+    expect(report.issues.some((issue) => issue.suggestion?.includes('掩膜 Pearson 为准'))).toBe(false);
   });
 
   it('IF 模式不产生核分割/阈值类染色建议', () => {
@@ -184,6 +188,7 @@ describe('evaluateDiagnostics', () => {
 
   it('统计组样本不足 → warn', () => {
     const stats = {
+      designStatus: 'confirmed', controlGroup: '对照', inferenceStatus: 'blocked', issues: [],
       groupNames: ['对照', '处理'],
       ns: [2, 1],
       means: [0.1, 0.2],
@@ -198,7 +203,55 @@ describe('evaluateDiagnostics', () => {
       pairwiseSource: null,
     } as unknown as GroupStatsReport;
     const report = evaluateDiagnostics(ctx({ statsReport: stats }));
-    expect(report.issues.some((issue) => issue.message.includes('样本数 <3'))).toBe(true);
+    const issue = report.issues.find((issue) => issue.message.includes('独立单位数 <3'));
+    expect(issue?.message).toContain('nBio=');
+    expect(issue?.suggestion).toContain('目标检验效力');
+    expect(issue?.suggestion).not.toContain('≥5');
+  });
+
+  it('uses canonical undefined reasons instead of legacy zeros or sign comparisons', () => {
+    const pixels = { data: new Uint8ClampedArray(16), width: 2, height: 2 };
+    const measured = computeColocalizationRegions(pixels, DEFAULT_COLOC, [{ id: 'roi', name: '用户区域', x: 0, y: 0, w: 1, h: 1 }]);
+    const result = { ...baseResult(), ifAnalysis: measured.ifAnalysis, coloc: { ...measured.coloc, pearsonAll: 0.8, pearsonMasked: 0 } };
+    const project = { ...baseProject(), profileId: 'if_coloc' as const };
+    const report = evaluateDiagnostics(ctx({ project, result, qc: null }));
+    expect(report.issues.some((issue) => issue.message === 'Manders M1：区域 A 总强度为零。')).toBe(true);
+    expect(report.issues.some((issue) => issue.message === '全像素 Pearson：有效像素少于 2 个。')).toBe(true);
+    expect(report.issues.some((issue) => /符号相反|线性相关接近零|共定位很弱/.test(issue.message))).toBe(false);
+    expect(report.issues.filter((issue) => issue.message === '掩膜 Pearson：并集内像素少于 2 个。')).toHaveLength(1);
+  });
+
+  it('gives IF-specific low-resolution and saved-library advice without stain or group-test suggestions', () => {
+    const measured = computeColocalizationRegions({ data: new Uint8ClampedArray(16), width: 2, height: 2 }, DEFAULT_COLOC);
+    const project = { ...baseProject(), profileId: 'if_coloc' as const };
+    project.image = { ...project.image!, workingWidth: 2, workingHeight: 2 };
+    project.pixels = { data: new Uint8ClampedArray(16), width: 2, height: 2 } as ImageData;
+    project.ifSamples = [{ id: 'if1', name: '保存的 IF', group: '处理', imageName: 'if.png', addedAt: 0, sourceId: 'sha256:if', profileId: 'if_coloc', image: project.image, config: DEFAULT_COLOC, analysis: measured.ifAnalysis }];
+    const report = evaluateDiagnostics(ctx({ project, result: { ...baseResult(), ifAnalysis: measured.ifAnalysis }, qc: { ...defaultQc, tissueFraction: 0.01, saturatedFraction: 0.5 } }));
+    expect(report.issues.find((issue) => issue.message.includes('最长边'))?.suggestion).toContain('ROI 内有效像素数');
+    expect(report.issues.some((issue) => issue.message === 'IF 当前仅提供描述统计')).toBe(true);
+    expect(report.issues.map((issue) => `${issue.message} ${issue.suggestion}`).join('\n')).not.toMatch(/核分割|阳性面积|样本库为空|批处理导入/);
+    for (const issue of report.issues) expect(t(issue.message, 'en') + t(issue.suggestion ?? '', 'en')).not.toMatch(/[\u4e00-\u9fff]/);
+  });
+
+  it('does not equate low finite correlation with biological colocalization or tune thresholds to expectations', () => {
+    const measured = computeColocalizationRegions({ data: new Uint8ClampedArray(16), width: 2, height: 2 }, DEFAULT_COLOC);
+    const result = { ...baseResult(), coloc: { ...measured.coloc, pearsonAll: 0.6, pearsonMasked: 0 } };
+    const report = evaluateDiagnostics(ctx({ project: { ...baseProject(), profileId: 'if_coloc' }, result, qc: null }));
+    const issue = report.issues.find((issue) => issue.message.includes('线性相关接近零'));
+    expect(issue?.suggestion).toContain('不能单独判断生物学共定位');
+    expect(issue?.suggestion).toContain('预先确定');
+    expect(report.issues.some((item) => item.message.includes('符号相反'))).toBe(false);
+    expect(report.issues.some((item) => item.suggestion?.includes('若预期'))).toBe(false);
+  });
+
+  it('does not call ordinary ANOVA robust to unequal variances', () => {
+    const stats = compareGroups([{ name: '对照', values: [1, 2, 3] }, { name: '处理', values: [2, 5, 8] }], { designStatus: 'confirmed', controlGroup: '对照' });
+    stats.leveneP = 0.01;
+    const report = evaluateDiagnostics(ctx({ statsReport: stats }));
+    expect(report.issues.find((issue) => issue.message.includes('方差不齐'))?.suggestion).toContain('普通 ANOVA 与 Dunnett 不属于异方差稳健检验');
+    const descriptive = compareGroups([{ name: '未确认', values: [1] }]);
+    expect(evaluateDiagnostics(ctx({ statsReport: descriptive })).issues.some((issue) => issue.message.includes('独立单位数'))).toBe(false);
   });
 
   it('空样本库 → 提示加入样本', () => {

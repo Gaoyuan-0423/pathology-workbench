@@ -1,6 +1,6 @@
 /**
  * ONNX 推理会话（Worker 内使用；动态导入 onnxruntime-web，wasm 走本地静态资产）。
- * 会话按模型文件名缓存；同一会话跨请求复用。
+ * 会话按模型内容 SHA-256 缓存；同一会话跨请求复用。
  */
 import { inferPlaneSize, toModelTensor } from './prepost.ts';
 import { ortAssetRoot } from './asset-root.ts';
@@ -22,19 +22,27 @@ interface OrtModule {
   };
 }
 
-let cached: { name: string; session: OrtSession } | null = null;
+let cached: { name: string; id: string; session: OrtSession } | null = null;
 let loading: Promise<OrtSession> | null = null;
 
 export function cachedModelName(): string | null {
   return cached?.name ?? null;
 }
 
+export function cachedModelId(): string | null {
+  return cached?.id ?? null;
+}
+
 export async function ensureSession(
   name: string,
   bytes: ArrayBuffer,
+  id: string,
 ): Promise<OrtSession> {
-  if (cached?.name === name) return cached.session;
-  if (loading) return loading;
+  if (cached?.id === id) { cached.name = name; return cached.session; }
+  // Worker requests are serialized. Defensive waiting also prevents a caller from
+  // receiving another model's in-flight session if this function is reused.
+  if (loading) { await loading.catch(() => undefined); return ensureSession(name, bytes, id); }
+  cached = null;
   loading = (async () => {
     const ort = (await import('onnxruntime-web')) as unknown as OrtModule;
     // wasm/mjs 由 vite-plugin-static-copy 复制到 <base>ort/（离线，不走 CDN）
@@ -42,7 +50,7 @@ export async function ensureSession(
     const session = await ort.InferenceSession.create(new Uint8Array(bytes), {
       executionProviders: ['wasm'],
     });
-    cached = { name, session };
+    cached = { name, id, session };
     return session;
   })();
   try {

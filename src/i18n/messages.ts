@@ -1,5 +1,13 @@
+import { unitMessages, unitTemplates } from './unit-messages';
+import { ifMessages, ifTemplates } from './if-messages';
+import { ifStatisticsMessages } from './if-statistics-messages';
+import { ifUnitUiMessages } from './if-unit-ui-messages';
 /** Explicit presentation messages. Chinese remains the stored/core value. */
 export const messages: Record<string, string> = {
+  ...unitMessages,
+  ...ifMessages,
+  ...ifStatisticsMessages,
+  ...ifUnitUiMessages,
   '请等待当前导入或批处理完成': 'Wait for the current import or batch analysis to finish',
   '打开此版本会替换当前工作内容，是否继续？': 'Opening this version replaces the current workspace. Continue?',
   '已取消打开项目': 'Opening the project was cancelled',
@@ -162,10 +170,20 @@ export const messages: Record<string, string> = {
   'SVG 渲染失败': 'SVG rendering failed', 'PNG 编码失败': 'PNG encoding failed',
   '病理工作台体检报告': 'Pathology Workbench quality report', '总评': 'Summary',
 
+  '输入或设置已改变，当前结果正在重新计算；完成前不可保存为样本或导出当前结果。': 'Inputs or settings changed. Recalculating the current result; save or export it after analysis completes.',
+  '分析失败，当前结果不可用。请重试或调整设置。': 'Analysis failed. The current result is unavailable; retry or adjust the settings.',
+  '请重新载入 AI 模型或关闭 AI 后再分析。': 'Reload the AI model or turn AI off before analyzing.',
+  '重新分析': 'Retry analysis',
+  '分析返回的 AI 模型身份与当前请求不一致。': 'The AI model identity in the result does not match the analysis request.',
+  '分析线程失败': 'The analysis worker failed',
+  '分析响应无法读取': 'The analysis response could not be read',
+
 };
 
 /** Placeholders are opaque values (including user filenames/names), not translated. */
 export const templates: Array<[string, string]> = [
+  ...unitTemplates,
+  ...ifTemplates,
   ['正在解码 {0}…', 'Decoding {0}…'],
   ['已导入并降采样至 {0}×{1}（分析在工作图上进行）', 'Imported and downsampled to {0}×{1} (analysis uses the working image)'],
   ['对照片标定完成：阈值 {0}', 'Control calibrated: threshold {0}'],

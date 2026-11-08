@@ -1,9 +1,8 @@
 import { t } from '../i18n.ts';
 import { localizeReport } from './localize-report.ts';
 import { useMemo, useState } from 'react';
-import { buildFullReport, groupsFromSamples } from '../core/api.ts';
+import { buildFullReport, sampleStatistics } from '../core/api.ts';
 import { evaluateDiagnostics, type DiagnosticsReport } from '../core/advisor.ts';
-import { compareGroups } from '../core/analysis/statistics.ts';
 import { downloadText } from '../core/export.ts';
 import type { AnalysisResult, MetricKey, ProjectState } from '../core/types.ts';
 
@@ -32,11 +31,8 @@ export default function AdvisorPanel({
 
   const report: DiagnosticsReport | null = useMemo(() => {
     if (!project.pixels) return null;
-    const groups = groupsFromSamples({ samples: project.samples, metric: statsMetric });
-    const stats =
-      groups.length >= 2 && groups.reduce((sum, g) => sum + g.values.length, 0) >= 4
-        ? compareGroups(groups)
-        : null;
+    const state = sampleStatistics(project.samples, statsMetric, project.experimentalDesign);
+    const stats = state.inference ? state.report : null;
     return evaluateDiagnostics({ project, result: analysis, qc: analysis?.qc ?? null, statsReport: stats });
   }, [project, analysis, statsMetric]);
 

@@ -16,6 +16,8 @@
 - 对照片标定（`controlThresholdFromChannel`，默认假阳率 0.001）优先于逐图 Otsu；弥漫背景图必须用它或核级指标。
 - 泳道/ROI 提议是半自动设计；4060 类弱染色图仅解析出强泳道属预期，如实报告解析数。
 - 解码只收 8/16 位无符号 TIFF/PNG，其余显式拒绝，不要加自动转换。
+- IF 规范结果使用 `AnalysisResult.ifAnalysis`，历史兼容 `coloc`/`overall` 不用于构造新样本或冒充新区域结果。IF 全图预处理固定套 ROI；矩形逐参数 `Math.round` 后取真实半开交集，空交集不能强制为 1 像素。Pearson 无定义和 Manders 零分母用 `null` 与原因码，不能显示为零。旧 `coloc` 仅保留历史兼容约定。
+- IF 保存到独立的 `ifSamples`，每条记录含整图及所有 ROI、自有配置和来源。IF 统计统一走 `ifSampleStatistics` 和独立的 `ifExperimentalDesign`，不可把 IF 伪装成染色记录。整图系数或显式选定不重叠 ROI 的系数算术均值先形成一个视野值，再去重视野、切片内视野等权、单位内切片等权；null 不重权，不做像素池化或 Fisher 变换。ROI/记录数不等于 nBio。详见 `docs/if-experimental-units.md`。
 
 ## 公开基准与 grader
 
@@ -23,6 +25,8 @@
 
 ## 其他纪律
 
+- 染色样本库统计统一调用 `sampleStatistics` / `aggregateExperimentalUnits`；IF 调用 `ifSampleStatistics`。共享的 `aggregateDeclaredUnits` 只接收真实视野值与声明身份；不得把图像条目直接当独立 n。仅显式确认的独立设计进入推断。染色路径的未知/混合预设、IF 占位指标和 ROI 记录仍不得绕过范围保护。详情见 `docs/experimental-units.md`。
+- 原始记录、排除状态和实验单位映射分别保存；修改映射或纳入记录应撤销设计确认。导出/API/Methods 必须用同一当前指标和统计契约，不能信任外部传入的旧统计报告。
 - 新增界面文案/导出字段**中英同步**（`src/i18n/`），Methods 文本（`methods.ts` zh/en 两段）与实际参数逐项一致。
 - LICENSE 已定 MIT，README 与之保持一致。
 - 发布走 blot-workbench 仓库的统一发布器（`release.py`），需所有者确认；本仓库 main 推送只触发 CI。
