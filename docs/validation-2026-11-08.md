@@ -37,9 +37,11 @@ The screenshot test writes the README screenshots. Preserve those files before l
 
 ### Integration with the current main branch
 
-The PR was prepared in a separate worktree on top of main commit [`bb3af4b`](https://github.com/Gaoyuan-0423/pathology-workbench/commit/bb3af4bfc312733e8239c808b127e2294cd84ecd), preserving the upstream optional `includeNuclei` export and its regression test. The original validated implementation was retained separately. Among the 65 snapshot entries, only `src/core/analysis/engine.ts` differs after integration, by those upstream optional-export additions; no prior source hash is claimed to describe that combined file.
+The PR was prepared in a separate worktree on top of main commit [`bb3af4b`](https://github.com/Gaoyuan-0423/pathology-workbench/commit/bb3af4bfc312733e8239c808b127e2294cd84ecd), preserving the upstream optional `includeNuclei` export and its regression test. The original validated implementation was retained separately. At initial integration, among the 65 snapshot entries, only `src/core/analysis/engine.ts` differed, by those upstream optional-export additions; no prior source hash is claimed to describe that combined file. The test-harness correction described below is an additional change to the snapshot.
 
 The integrated implementation was checked again: **29 test files, 289/289 unit tests passed**, including the upstream test that optional nucleus export does not alter ordinary measurements; TypeScript/Vite production build passed; lint exited 0 with the same 9 warnings. The previous 28/28 local browser result belongs to the pre-integration snapshot. The browser suite and 35-image measurement suite were not rerun locally during PR preparation; PR CI provides a separate browser run for the integrated commit. The additional upstream unit test is not added to a count of experiments or images.
+
+The first PR CI browser run exposed a test-harness dependency: scrolling to the IF unit table occurred only when optional evidence screenshots were enabled, while the subsequent viewport assertion ran in all environments. The same failure was reproduced locally without the evidence environment variable. The scroll preparation now runs independently of screenshot capture; the original visibility bounds and application code are unchanged. All four IF-unit browser tests then passed locally with evidence capture disabled. This correction does not change image measurements or statistics.
 
 ## Numerical and image-regression evidence
 

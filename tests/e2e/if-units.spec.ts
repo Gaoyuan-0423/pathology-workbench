@@ -47,13 +47,14 @@ async function openAssignment(page: Page, id: string) {
   return card;
 }
 async function capture(page: Page, filename: string, regionName: string) {
-  if (!process.env.WISPLAB_EVIDENCE_DIR) return;
-  await mkdir(process.env.WISPLAB_EVIDENCE_DIR, { recursive: true });
+  // Viewport assertions need the same scroll position with or without screenshots.
   await page.getByRole('region', { name: regionName, exact: true }).evaluate((el) => {
     const pane = el.closest('.side-panel');
     if (pane) pane.scrollTop += el.getBoundingClientRect().top - pane.getBoundingClientRect().top - 12;
     el.querySelectorAll('.unit-table-wrap').forEach((table) => { table.scrollLeft = table.scrollWidth; });
   });
+  if (!process.env.WISPLAB_EVIDENCE_DIR) return;
+  await mkdir(process.env.WISPLAB_EVIDENCE_DIR, { recursive: true });
   await page.evaluate(() => {
     const note = document.createElement('div'); note.id = 'if-unit-evidence';
     note.textContent = 'SYNTHETIC COEFFICIENT RECORDS / 合成系数记录 · 非真实实验';
