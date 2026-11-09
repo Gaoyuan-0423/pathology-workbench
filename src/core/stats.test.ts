@@ -6,6 +6,7 @@ import {
   kruskalWallis,
   leveneTest,
   mannWhitneyU,
+  oneWayAnova,
   significanceStars,
   welchTTest,
 } from './stats.ts';
@@ -188,4 +189,52 @@ describe('significanceStars', () => {
     expect(significanceStars(0.2)).toBe('ns');
     expect(significanceStars(null)).toBe('');
   });
+});
+
+// Reference: scipy 1.15.2 — ttest_ind(equal_var=False), f_oneway, kruskal, levene(center='median').
+// 深尾部用例防止 p 经 1 − cdf 相消成 0。
+const SCIPY_TWO_SAMPLE = [
+  {name: "unequal var n=8/10", a: [12.1, 13.4, 11.8, 14.2, 12.9, 13.1, 12.4, 13.8], b: [15.2, 18.9, 14.1, 20.3, 16.7, 17.5, 13.9, 19.4, 16.1, 18.2], t: -5.355802263087208, p: 0.0001726607883052276},
+  {name: "small n=4/5", a: [1.02, 0.95, 1.1, 0.98], b: [1.45, 1.62, 1.38, 1.71, 1.55], t: -7.8843456743402704, p: 0.00020914965482157148},
+  {name: "ties n=9/9", a: [3, 4, 4, 5, 5, 5, 6, 7, 8], b: [5, 6, 6, 7, 7, 8, 8, 9, 10], t: -2.848220418184273, p: 0.011624801525705183},
+  {name: "large effect n=12/12", a: [0.1, 0.12, 0.09, 0.11, 0.13, 0.1, 0.08, 0.12, 0.11, 0.1, 0.09, 0.12], b: [0.31, 0.29, 0.35, 0.33, 0.3, 0.36, 0.28, 0.34, 0.32, 0.31, 0.37, 0.3], t: -23.16566424689782, p: 4.0702762933110433e-14},
+  {name: "deep tail n=8/8", a: [0.1, 0.12, 0.09, 0.11, 0.13, 0.1, 0.08, 0.12], b: [0.31, 0.29, 0.35, 0.33, 0.3, 0.36, 0.28, 0.34], t: -17.897596030248636, p: 1.4000762310111736e-09},
+];
+
+const SCIPY_MULTI_GROUP = [
+  {name: "3 groups n=6", groups: [[4.2, 4.8, 5.1, 4.5, 4.9, 5.3], [5.9, 6.4, 6.1, 5.7, 6.8, 6.2], [4.4, 5.0, 4.7, 5.2, 4.6, 4.9]], anovaF: 29.165961049957673, anovaP: 6.776203339484556e-06, kwH: 11.383092286501375, kwP: 0.0033743716719940465, leveneF: 0.16883116883116883, leveneP: 0.8462343491272545},
+  {name: "4 groups unequal n", groups: [[10, 12, 11, 13], [14, 15, 13, 16, 17], [11, 12, 12, 13, 14, 12], [18, 20, 19]], anovaF: 25.42288557213931, anovaP: 6.304719420304369e-06, kwH: 13.014603008044773, kwP: 0.0046051317837134485, leveneF: 0.5849952516619181, leveneP: 0.6346756423168582},
+  {name: "3 groups heavy ties", groups: [[1, 1, 2, 2, 2, 3], [2, 3, 3, 3, 4, 4], [3, 4, 4, 5, 5, 5]], anovaF: 15.648148148148149, anovaP: 0.00021334750902671294, kwH: 11.618506493506496, kwP: 0.00299966924891639, leveneF: 0.21739130434782594, leveneP: 0.8071059800854483},
+  {name: "3 groups tiny differences", groups: [[100.1, 100.3, 99.8, 100.0, 100.2], [100.2, 100.0, 100.4, 99.9, 100.1], [100.0, 100.3, 100.1, 99.7, 100.2]], anovaF: 0.11023622047245102, anovaP: 0.8965190050668456, kwH: 0.06654478976233771, kwP: 0.9672750429299903, leveneF: 0.040816326530608175, leveneP: 0.9601381276398205},
+  {name: "deep tail 3\u00d78", groups: [[0.1, 0.12, 0.09, 0.11, 0.13, 0.1, 0.08, 0.12], [0.31, 0.29, 0.35, 0.33, 0.3, 0.36, 0.28, 0.34], [0.52, 0.49, 0.55, 0.5, 0.53, 0.48, 0.51, 0.54]], anovaF: 576.1753846153891, anovaP: 4.511386541797749e-19, kwH: 20.497824194952138, kwP: 3.539598729577977e-05, leveneF: 2.1457286432160823, leveneP: 0.14193095593332059},
+  {name: "deep tail 3\u00d740 KW", groups: [[0.0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12, 0.13, 0.14, 0.15, 0.16, 0.17, 0.18, 0.19, 0.2, 0.21, 0.22, 0.23, 0.24, 0.25, 0.26, 0.27, 0.28, 0.29, 0.3, 0.31, 0.32, 0.33, 0.34, 0.35, 0.36, 0.37, 0.38, 0.39], [1.0, 1.01, 1.02, 1.03, 1.04, 1.05, 1.06, 1.07, 1.08, 1.09, 1.1, 1.11, 1.12, 1.13, 1.14, 1.15, 1.16, 1.17, 1.18, 1.19, 1.2, 1.21, 1.22, 1.23, 1.24, 1.25, 1.26, 1.27, 1.28, 1.29, 1.3, 1.31, 1.32, 1.33, 1.34, 1.35, 1.36, 1.37, 1.38, 1.39], [2.0, 2.01, 2.02, 2.03, 2.04, 2.05, 2.06, 2.07, 2.08, 2.09, 2.1, 2.11, 2.12, 2.13, 2.14, 2.15, 2.16, 2.17, 2.18, 2.19, 2.2, 2.21, 2.22, 2.23, 2.24, 2.25, 2.26, 2.27, 2.28, 2.29, 2.3, 2.31, 2.32, 2.33, 2.34, 2.35, 2.36, 2.37, 2.38, 2.39]], anovaF: 2926.829268292702, anovaP: 1.2347305530948768e-100, kwH: 105.78512396694214, kwP: 1.0691833741861901e-23, leveneF: 0.0, leveneP: 1.0},
+];
+
+const close = (actual: number, expected: number) =>
+  expect(Math.abs(actual - expected)).toBeLessThanOrEqual(1e-9 * Math.abs(expected) + 1e-15);
+
+describe('与 scipy 金标准一致', () => {
+  for (const ref of SCIPY_TWO_SAMPLE) {
+    it(`Welch t：${ref.name}`, () => {
+      const r = welchTTest(ref.a, ref.b);
+      close(r.t, ref.t);
+      close(r.p, ref.p);
+      expect(r.p).toBeGreaterThan(0);
+    });
+  }
+  for (const ref of SCIPY_MULTI_GROUP) {
+    it(`ANOVA / Kruskal–Wallis / Levene：${ref.name}`, () => {
+      const anova = oneWayAnova(ref.groups);
+      close(anova.f, ref.anovaF);
+      close(anova.p, ref.anovaP);
+      const kw = kruskalWallis(ref.groups);
+      close(kw.h, ref.kwH);
+      close(kw.p, ref.kwP);
+      const lev = leveneTest(ref.groups);
+      close(lev.f, ref.leveneF);
+      close(lev.p, ref.leveneP);
+      expect(anova.p).toBeGreaterThan(0);
+      expect(kw.p).toBeGreaterThan(0);
+    });
+  }
 });

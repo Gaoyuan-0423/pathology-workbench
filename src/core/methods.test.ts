@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import * as XLSX from 'xlsx';
 import { generateMethodsEn, generateMethodsZh } from './methods.ts';
 import { createEmptyProject, DEFAULT_THRESHOLD, type AnalysisResult } from './types.ts';
 import { buildWorkbook, metricsCsv } from './export.ts';
@@ -111,6 +112,30 @@ describe('buildWorkbook', () => {
       result,
     );
     expect(book.SheetNames).toEqual(['样本指标', '统计检验', 'Methods', '项目信息']);
+  });
+
+  it('极小 p 值按原值导出，不被舍入成 0', () => {
+    const report = compareGroups([
+      { name: '对照', values: [0.1, 0.12, 0.09, 0.11, 0.13, 0.1, 0.08, 0.12] },
+      { name: '处理', values: [0.31, 0.29, 0.35, 0.33, 0.3, 0.36, 0.28, 0.34] },
+      { name: '处理2', values: [0.52, 0.49, 0.55, 0.5, 0.53, 0.48, 0.51, 0.54] },
+    ]);
+    expect(report.pairwise.length).toBeGreaterThan(0);
+    const p = report.omnibusParametric!.p;
+    expect(p).toBeGreaterThan(0);
+    expect(p).toBeLessThan(5e-5);
+    const book = buildWorkbook([], report, project, result);
+    const rows = XLSX.utils.sheet_to_json<(string | number)[]>(book.Sheets['统计检验'], { header: 1, raw: true });
+    const header = rows[0];
+    const pCol = header.indexOf('p');
+    const omnibus = rows.find((row) => row[0] === report.omnibusParametric!.label)!;
+    expect(omnibus[pCol]).toBe(p);
+    const pairwise = rows.find((row) => row[0] === report.pairwise[0].label)!;
+    expect(pairwise[pCol]).toBe(report.pairwise[0].p);
+    expect(pairwise[header.indexOf('校正p')]).toBe(report.pairwise[0].adjustedP);
+    // 描述统计仍保留 4 位小数
+    const control = rows.find((row) => row[0] === '对照' && typeof row[2] === 'number')!;
+    expect(control[2]).toBe(Math.round(report.means[0] * 1e4) / 1e4);
   });
 });
 

@@ -97,6 +97,21 @@ export function fCdf(f: number, df1: number, df2: number): number {
   return betaInc(df1 / 2, df2 / 2, x);
 }
 
+/**
+ * 双侧 t 尾概率 P(|T| ≥ |t|) = I_{df/(df+t²)}(df/2, 1/2)。
+ * 直接取上尾，避免 2·(1 − cdf) 在深尾部相消成 0。
+ */
+export function studentTTwoSidedP(t: number, df: number): number {
+  if (df <= 0 || Number.isNaN(t)) return NaN;
+  return betaInc(df / 2, 0.5, df / (df + t * t));
+}
+
+/** F 分布上尾 P(F ≥ f) = I_{df2/(df2+df1·f)}(df2/2, df1/2)，不经 1 − cdf。 */
+export function fSurvival(f: number, df1: number, df2: number): number {
+  if (f < 0 || df1 <= 0 || df2 <= 0) return NaN;
+  return betaInc(df2 / 2, df1 / 2, df2 / (df2 + df1 * f));
+}
+
 export interface TTestResult {
   t: number;
   df: number;
@@ -118,7 +133,7 @@ export function welchTTest(a: number[], b: number[]): TTestResult {
   const num = (v1 / n1 + v2 / n2) ** 2;
   const den = (v1 / n1) ** 2 / (n1 - 1) + (v2 / n2) ** 2 / (n2 - 1);
   const df = den > 0 ? num / den : n1 + n2 - 2;
-  const p = 2 * (1 - studentTCdf(Math.abs(t), df));
+  const p = studentTTwoSidedP(t, df);
   return { t, df, p: Math.min(1, Math.max(0, p)) };
 }
 
@@ -152,7 +167,7 @@ export function oneWayAnova(groups: number[][]): AnovaResult {
   const msw = ssw / df2;
   if (msw === 0) return { f: 0, df1, df2, p: 1, msWithin: 0 };
   const f = msb / msw;
-  const p = 1 - fCdf(f, df1, df2);
+  const p = fSurvival(f, df1, df2);
   return { f, df1, df2, p: Math.min(1, Math.max(0, p)), msWithin: msw };
 }
 
@@ -191,7 +206,17 @@ export function normalCdf(x: number): number {
 
 /** 正则化下不完全伽马函数 P(a, x)（级数 + 连分式）。 */
 export function lowerGammaInc(a: number, x: number): number {
-  if (x <= 0) return 0;
+  return gammaIncPQ(a, x).p;
+}
+
+/** 正则化上不完全伽马函数 Q(a, x)；深尾部由连分式直接给出，不经 1 − P 相消。 */
+export function upperGammaInc(a: number, x: number): number {
+  return gammaIncPQ(a, x).q;
+}
+
+/** 级数分支精确给出 P，连分式分支精确给出 Q，另一侧取补。 */
+function gammaIncPQ(a: number, x: number): { p: number; q: number } {
+  if (x <= 0) return { p: 0, q: 1 };
   if (x < a + 1) {
     // 级数
     let ap = a;
@@ -203,9 +228,10 @@ export function lowerGammaInc(a: number, x: number): number {
       sum += del;
       if (Math.abs(del) < Math.abs(sum) * 1e-14) break;
     }
-    return sum * Math.exp(-x + a * Math.log(x) - lgamma(a));
+    const p = sum * Math.exp(-x + a * Math.log(x) - lgamma(a));
+    return { p, q: 1 - p };
   }
-  // 连分式（Lentoni），计算 Q 再取 1-Q
+  // 连分式（Lentz），直接给出 Q
   const FPMIN = 1e-300;
   let b = x + 1 - a;
   let c = 1 / FPMIN;
@@ -224,7 +250,13 @@ export function lowerGammaInc(a: number, x: number): number {
     if (Math.abs(del - 1) < 1e-14) break;
   }
   const q = Math.exp(-x + a * Math.log(x) - lgamma(a)) * h;
-  return 1 - q;
+  return { p: 1 - q, q };
+}
+
+/** 卡方分布上尾 P(X ≥ x)。 */
+export function chiSquareSurvival(x: number, df: number): number {
+  if (x <= 0 || df <= 0) return 1;
+  return upperGammaInc(df / 2, x / 2);
 }
 
 /** 卡方分布累积概率。 */
@@ -422,7 +454,7 @@ export function kruskalWallis(groups: number[][]): KruskalWallisResult {
   const h = (12 / (n * (n + 1))) * rankSumSqOverN - 3 * (n + 1);
   const hCorrected = h / tieFactor;
   const df = k - 1;
-  const p = 1 - chiSquareCdf(hCorrected, df);
+  const p = chiSquareSurvival(hCorrected, df);
   return { h: hCorrected, df, p: Math.min(1, Math.max(0, p)) };
 }
 

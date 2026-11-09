@@ -74,7 +74,7 @@ export function buildWorkbook(
             round4(report.omnibusParametric.statistic),
             report.omnibusParametric.df1 ?? '',
             report.omnibusParametric.df2 === null ? '' : round4(report.omnibusParametric.df2),
-            round4(report.omnibusParametric.p),
+            pValue(report.omnibusParametric.p),
             '—',
             significanceStars(report.omnibusParametric.p),
           ]]
@@ -85,7 +85,7 @@ export function buildWorkbook(
             round4(report.omnibusNonParametric.statistic),
             report.omnibusNonParametric.df1 ?? '',
             '',
-            round4(report.omnibusNonParametric.p),
+            pValue(report.omnibusNonParametric.p),
             '—',
             significanceStars(report.omnibusNonParametric.p),
           ]]
@@ -95,8 +95,8 @@ export function buildWorkbook(
         '',
         '',
         '',
-        round4(row.p),
-        round4(row.adjustedP),
+        pValue(row.p),
+        pValue(row.adjustedP),
         significanceStars(row.adjustedP),
       ]),
       [],
@@ -110,8 +110,8 @@ export function buildWorkbook(
       ]),
       [],
       [t('正态性 (D\'Agostino–Pearson)'), 'p'],
-      ...report.normality.map((item) => [item.group, item.p === null ? t('n<8 未检验') : round4(item.p)]),
-      [t('方差齐性 (Brown–Forsythe)'), round4(report.leveneP)],
+      ...report.normality.map((item) => [item.group, item.p === null ? t('n<8 未检验') : pValue(item.p)]),
+      [t('方差齐性 (Brown–Forsythe)'), pValue(report.leveneP)],
       [],
       [t('建议'), t(report.recommendation)],
     ];
@@ -143,6 +143,15 @@ export function buildWorkbook(
     t('项目信息'),
   );
   return book;
+}
+
+/**
+ * p 值按原始双精度写出，不做定点舍入：round4 会把 p < 0.00005 写成 0，
+ * 与界面的 "<0.0001" 不一致，且期刊不接受报告 p = 0。显示格式交给 Excel。
+ */
+function pValue(value: number | null): number | string {
+  if (value === null || !Number.isFinite(value)) return '';
+  return value;
 }
 
 function round4(value: number | null): number | string {
