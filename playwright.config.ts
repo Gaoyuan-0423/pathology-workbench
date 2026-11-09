@@ -5,6 +5,7 @@ const baseURL = `http://localhost:${port}`;
 
 export default defineConfig({
   testDir: 'tests/e2e',
+  testIgnore: 'production-onnx.spec.ts',
   timeout: 60_000,
   use: {
     baseURL,

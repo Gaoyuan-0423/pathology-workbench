@@ -14,7 +14,10 @@ const copyStaticAssets: Plugin = {
     const ortSource = root + 'node_modules/onnxruntime-web/dist'
     const ortTarget = root + 'dist/ort'
     mkdirSync(ortTarget, { recursive: true })
-    for (const file of ['ort-wasm-simd-threaded.mjs', 'ort-wasm-simd-threaded.wasm']) {
+    for (const file of [
+      'ort-wasm-simd-threaded.mjs', 'ort-wasm-simd-threaded.wasm',
+      'ort-wasm-simd-threaded.jsep.mjs', 'ort-wasm-simd-threaded.jsep.wasm',
+    ]) {
       copyFileSync(ortSource + '/' + file, ortTarget + '/' + file)
     }
     // README 截图 → dist/screenshots/（Pages 上 README 图片可访问）
